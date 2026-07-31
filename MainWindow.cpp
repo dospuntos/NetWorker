@@ -5,7 +5,7 @@
 
 #include "MainWindow.h"
 
-#include <optional>
+#include <cctype>
 
 #include <Application.h>
 #include <Button.h>
@@ -79,10 +79,10 @@ MainWindow::MessageReceived(BMessage* message)
 
         case RequestCompleted:
         {
-            auto id = message->GetInt32(Id, -1);
-            auto ok = message->GetBool(Success, false);
+			int id = message->GetInt32(Id, -1);
+			bool ok = message->GetBool(Success, false);
 
-            if (!fCurrentResult.has_value()
+			if (!fCurrentResult.has_value()
                     || id != fCurrentResult->Identity())
                 break;
 
@@ -139,17 +139,54 @@ MainWindow::MessageReceived(BMessage* message)
         case HttpStatus:
         {
             using namespace BPrivate::Network::UrlEventData;
-            auto id = message->GetInt32(Id, -1);
-            if (!fCurrentResult.has_value()
+			int id = message->GetInt32(Id, -1);
+			if (!fCurrentResult.has_value()
                     || id != fCurrentResult->Identity())
                 break;
 
-            auto statusCode = message->GetInt16(HttpStatusCode, 0);
-            BString label;
+			int statusCode = message->GetInt16(HttpStatusCode, 0);
+			BString label;
             label << statusCode;
             fStatusLabel->SetText(label.String());
             break;
         }
+
+		case 'padd':
+		{
+			BString key = fParamKeyField->Text();
+			BString value = fParamValueField->Text();
+			if (key.Length() == 0)
+				break;
+
+			BRow* row = new BRow();
+			row->SetField(new BStringField(key.String()), 0);
+			row->SetField(new BStringField(value.String()), 1);
+			fParamsList->AddRow(row);
+
+			fParamKeyField->SetText("");
+			fParamValueField->SetText("");
+			break;
+		}
+
+		case 'prem':
+		{
+			BRow* selected = fParamsList->CurrentSelection();
+			if (selected != nullptr)
+				fParamsList->RemoveRow(selected);
+			break;
+		}
+
+		case 'psel':
+		{
+			BRow* selected = fParamsList->CurrentSelection();
+			if (selected != nullptr) {
+				auto* keyField = static_cast<BStringField*>(selected->GetField(0));
+				auto* valField = static_cast<BStringField*>(selected->GetField(1));
+				fParamKeyField->SetText(keyField->String());
+				fParamValueField->SetText(valField->String());
+			}
+			break;
+		}
 		case B_ABOUT_REQUESTED:
 			be_app->AboutRequested();
 			break;
@@ -208,8 +245,8 @@ MainWindow::_BuildLayout()
 {
     // Method menu
     fMethodMenu = new BPopUpMenu("GET");
-    const char* methods[] = { "GET", "POST", "PUT", "PATCH", "DELETE", nullptr };
-    for (int i = 0; methods[i] != nullptr; i++)
+	const char* methods[] = {"GET", "QUERY", "POST", "PUT", "PATCH", "DELETE", nullptr};
+	for (int i = 0; methods[i] != nullptr; i++)
         fMethodMenu->AddItem(new BMenuItem(methods[i], nullptr));
     fMethodMenu->ItemAt(0)->SetMarked(true);
 
@@ -226,7 +263,6 @@ MainWindow::_BuildLayout()
 
     // Request body
     fRequestBodyView = new BTextView("requestBody");
-    fRequestBodyView->SetText("// Request body (JSON, form data…)");
     fRequestBodyScroll = new BScrollView("requestBodyScroll", fRequestBodyView,
                                          B_WILL_DRAW | B_FRAME_EVENTS,
                                          false, true);
@@ -257,19 +293,47 @@ MainWindow::_BuildLayout()
                                            false, true);
     BButton* clearButton = new BButton("clear", "Clear", new BMessage('clrr'));
 
-    // Request panel
-    BView* requestPanel =
-        BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-            .SetInsets(B_USE_WINDOW_INSETS)
-            .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
-                .Add(fMethodField)
-                .Add(fUrlField)
-                .Add(fSendButton)
-            .End()
-            .Add(fRequestBodyScroll)
-            .View();
+	// Params tab
+	fParamsList = new BColumnListView("paramsList", B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE,
+		B_FANCY_BORDER);
+	fParamsList->AddColumn(new BStringColumn("Key", 180, 80, 400, 0), 0);
+	fParamsList->AddColumn(new BStringColumn("Value", 300, 80, 2000, 0), 1);
+	fParamsList->SetInvocationMessage(
+		new BMessage('psel')); // double-click to load into fields for editing
 
-    // Response panel
+	fParamKeyField = new BTextControl("paramKey", "Key", "", nullptr);
+	fParamValueField = new BTextControl("paramValue", "Value", "", nullptr);
+	fParamAddButton = new BButton("paramAdd", "Add", new BMessage('padd'));
+	fParamRemoveButton = new BButton("paramRemove", "Remove", new BMessage('prem'));
+
+	BView* paramsPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+							 .Add(fParamsList)
+							 .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+								 .Add(fParamKeyField)
+								 .Add(fParamValueField)
+								 .Add(fParamAddButton)
+								 .Add(fParamRemoveButton)
+								 .End()
+							 .View();
+
+	fBodyTabView = new BTabView("bodyTabs");
+	fBodyTabView->AddTab(fRequestBodyScroll);
+	fBodyTabView->TabAt(0)->SetLabel("Raw");
+	fBodyTabView->AddTab(paramsPanel);
+	fBodyTabView->TabAt(1)->SetLabel("Form");
+
+	// Request panel
+	BView* requestPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+							  .SetInsets(B_USE_WINDOW_INSETS)
+							  .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+								  .Add(fMethodField)
+								  .Add(fUrlField)
+								  .Add(fSendButton)
+								  .End()
+							  .Add(fBodyTabView)
+							  .View();
+
+	// Response panel
     BView* responsePanel =
         BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
             .SetInsets(B_USE_WINDOW_INSETS)
@@ -314,20 +378,32 @@ MainWindow::_SendRequest()
     BHttpRequest request(url);
     request.SetMethod(BHttpMethod(method.String()));
 
-    // Attach request body if relevant.
-    // GET and HEAD should not send body
-    BString bodyText(fRequestBodyView->Text());
-    if (bodyText.Length() > 0
-            && method != "GET"
-            && method != "HEAD") {
-        // BMemoryIO does not copy the data — keep bodyText alive until
-        // Execute() is called by constructing it on the heap via unique_ptr.
-        request.SetRequestBody(
-            std::make_unique<BMemoryIO>(bodyText.String(), bodyText.Length()),
-            "application/json",
-            bodyText.Length()
-        );
-    }
+	if (fBodyTabView->Selection() == 1) {
+		fPendingRequestBody = "";
+		for (int32 i = 0; i < fParamsList->CountRows(); i++) {
+			BRow* row = fParamsList->RowAt(i);
+			auto* keyField = static_cast<BStringField*>(row->GetField(0));
+			auto* valField = static_cast<BStringField*>(row->GetField(1));
+
+			if (i > 0)
+				fPendingRequestBody << "&";
+			fPendingRequestBody << _UrlEncode(keyField->String()) << "="
+								<< _UrlEncode(valField->String());
+		}
+
+		if (fPendingRequestBody.Length() > 0 && method != "GET" && method != "HEAD") {
+			request.SetRequestBody(std::make_unique<BMemoryIO>(fPendingRequestBody.String(),
+									   fPendingRequestBody.Length()),
+				"application/x-www-form-urlencoded", fPendingRequestBody.Length());
+		}
+	} else {
+		fPendingRequestBody = fRequestBodyView->Text();
+		if (fPendingRequestBody.Length() > 0 && method != "GET" && method != "HEAD") {
+			request.SetRequestBody(std::make_unique<BMemoryIO>(fPendingRequestBody.String(),
+									   fPendingRequestBody.Length()),
+				"application/json", fPendingRequestBody.Length());
+		}
+	}
 
 	// Send request
     fCurrentResult = fSession.Execute(
@@ -337,7 +413,7 @@ MainWindow::_SendRequest()
     );
 
     fSendButton->SetEnabled(false);
-    fStatusLabel->SetText("Sending…");
+    fStatusLabel->SetText("Sending" B_UTF8_ELLIPSIS);
     fResponseHeadersList->Clear();
     fResponseBodyView->SetText("");
 }
@@ -349,4 +425,28 @@ MainWindow::_ClearResponse()
     fStatusLabel->SetText("(no response yet)");
     fResponseHeadersList->Clear();
     fResponseBodyView->SetText("");
+}
+
+
+BString
+MainWindow::_UrlEncode(const BString& value)
+{
+	BString result;
+	const char* str = value.String();
+
+	for (int32 i = 0; str[i] != '\0'; i++) {
+		unsigned char c = str[i];
+
+		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+			result << (char)c;
+		} else if (c == ' ') {
+			result << '+';
+		} else {
+			char buf[4];
+			snprintf(buf, sizeof(buf), "%%%02X", c);
+			result << buf;
+		}
+	}
+
+	return result;
 }

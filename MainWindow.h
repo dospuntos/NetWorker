@@ -6,13 +6,16 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <Window.h>
-#include <HttpFields.h>
-#include <HttpSession.h>
-#include <HttpResult.h>
+#include <optional>
+
 #include <ColumnListView.h>
 #include <ColumnTypes.h>
+#include <HttpFields.h>
+#include <HttpResult.h>
+#include <HttpSession.h>
 #include <MenuBar.h>
+#include <TabView.h>
+#include <Window.h>
 
 using BPrivate::Network::BHttpSession;
 using BPrivate::Network::BHttpResult;
@@ -56,6 +59,16 @@ private:
     BSplitView*         fSplitView;
     BHttpSession                fSession;
     std::optional<BHttpResult>  fCurrentResult;
+	BString fPendingRequestBody;
+
+	BTabView*        	fBodyTabView;
+	BColumnListView*  	fParamsList;
+	BTextControl*     	fParamKeyField;
+	BTextControl*     	fParamValueField;
+	BButton*          	fParamAddButton;
+	BButton*          	fParamRemoveButton;
+
+	static BString _UrlEncode(const BString& value);
 };
 
 #endif

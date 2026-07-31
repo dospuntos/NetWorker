@@ -1,4 +1,6 @@
 /objects*
+.cache/
+compile_commands.json
 NetWorker
 NetWorker.pld
 .genio
