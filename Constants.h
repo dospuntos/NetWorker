@@ -15,7 +15,14 @@ extern const char* kSettingsFile;
 enum {
 	M_NEW_FILE = 'fnew',
 	M_SHOW_HELP = 'help',
-	M_REPORT_A_BUG = 'bugs'
+	M_REPORT_A_BUG = 'bugs',
+
+	M_SEND_REQUEST = 'send',
+	M_CLEAR_RESPONSE = 'clrr',
+	M_ADD_PARAMETER = 'padd',
+	M_REMOVE_PARAMETER = 'prem',
+	M_SELECT_PARAMETER = 'psel',
+	M_SELECT_HISTORY = 'hsel'
 };
 
 

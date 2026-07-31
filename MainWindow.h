@@ -13,6 +13,7 @@
 #include <HttpFields.h>
 #include <HttpResult.h>
 #include <HttpSession.h>
+#include <ListView.h>
 #include <MenuBar.h>
 #include <TabView.h>
 #include <Window.h>
@@ -52,6 +53,8 @@ private:
     BButton*            fSendButton;
     BTextView*          fRequestBodyView;
     BScrollView*        fRequestBodyScroll;
+	BTextView*			fPreviewPanel;
+	BScrollView*		fPreviewPanelScroll;
     BStringView*        fStatusLabel;
     BColumnListView*    fResponseHeadersList;
     BTextView*          fResponseBodyView;
@@ -60,6 +63,7 @@ private:
     BHttpSession                fSession;
     std::optional<BHttpResult>  fCurrentResult;
 	BString fPendingRequestBody;
+	BListView* 			fHistoryPanel;
 
 	BTabView*        	fBodyTabView;
 	BColumnListView*  	fParamsList;
@@ -69,6 +73,13 @@ private:
 	BButton*          	fParamRemoveButton;
 
 	static BString _UrlEncode(const BString& value);
+};
+
+class HistoryItem : public BStringItem {
+public:
+	HistoryItem(BString label) : BStringItem(label) {}
+	BString fMethod, fUrl, fBody;
+	// Todo: add headers, params etc, maybe as a BMessage
 };
 
 #endif
