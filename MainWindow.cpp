@@ -206,22 +206,28 @@ MainWindow::MessageReceived(BMessage* message)
 					text << "Body:\n";
 					text << item->fBody;
 
-					BAlert* alert = new BAlert("History Item", text.String(), "Insert", "Close", nullptr,
+					BAlert* alert = new BAlert("History Item", text.String(), "Remove", "Insert", "Close",
 											B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_INFO_ALERT);
 
-					alert->SetShortcut(1, B_ESCAPE);
-					if (alert->Go() == 1)
+					alert->SetShortcut(2, B_ESCAPE);
+					int response = alert->Go();
+
+					if (response == 2)
 						break;
+					else if (response == 1) {
 
-					// Restore values
-					fUrlField->SetText(item->fUrl);
-					for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
-						BMenuItem* menuItem = fMethodMenu->ItemAt(i);
+						// Restore values
+						fUrlField->SetText(item->fUrl);
+						for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
+							BMenuItem* menuItem = fMethodMenu->ItemAt(i);
 
-						if (item->fMethod == menuItem->Label()) {
-							menuItem->SetMarked(true);
-							break;
+							if (item->fMethod == menuItem->Label()) {
+								menuItem->SetMarked(true);
+								break;
+							}
 						}
+					} else {
+						fHistoryPanel->RemoveItem(index);
 					}
 
 				}
@@ -420,8 +426,8 @@ MainWindow::_BuildLayout()
 	fSplitView->AddChild(responsePanel, 0.5f);
 
 	BSplitView* outerSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
-	outerSplit->AddChild(historyPanel, 0.2f);
 	outerSplit->AddChild(fSplitView, 0.8f);
+	outerSplit->AddChild(historyPanel, 0.2f);
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(outerSplit).End();
 }
@@ -500,6 +506,8 @@ MainWindow::_ClearResponse()
 	fStatusLabel->SetText("(no response yet)");
 	fResponseHeadersList->Clear();
 	fResponseBodyView->SetText("");
+	if (fCurrentResult.has_value())
+		fSession.Cancel(fCurrentResult.value());
 }
 
 
