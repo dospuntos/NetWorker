@@ -65,6 +65,8 @@ private:
     std::optional<BHttpResult>  fCurrentResult;
 	BString fPendingRequestBody;
 	BListView* 			fHistoryPanel;
+	BButton*			fClearHistoryBtn;
+	BButton*			fRemoveItemBtn;
 
 	BTabView*        	fBodyTabView;
 	BColumnListView*  	fParamsList;
@@ -78,6 +80,7 @@ private:
 	status_t	_LoadSettings(BMessage& settings);
 	void _RestoreValues(BMessage& settings);
 	void _LoadHistoryItem(HistoryItem* item);
+	void _UpdateHistoryButtons();
 
 };
 

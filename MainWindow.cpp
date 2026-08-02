@@ -204,6 +204,36 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_DELETE_HISTORY_ITEM:
+		{
+			int32 index = fHistoryPanel->CurrentSelection();
+			if (index >= 0) {
+				fHistoryPanel->RemoveItem(index);
+				_SaveSettings(); // Avoid stale history on disk
+			}
+			break;
+		}
+
+		case M_HISTORY_SELECTION_CHANGED:
+			_UpdateHistoryButtons();
+			break;
+
+		case M_CLEAR_HISTORY:
+		{
+			BAlert* alert = new BAlert("Clear history",
+				"Remove all items from the request history? This cannot be undone.",
+				"Clear", nullptr, "Cancel", B_WIDTH_FROM_WIDEST, B_OFFSET_SPACING, B_WARNING_ALERT);
+
+			alert->SetShortcut(2, B_ESCAPE);
+			if (alert->Go() == 0) {
+				fHistoryPanel->MakeEmpty();
+				_SaveSettings(); // Avoid stale history on disk
+			}
+			_UpdateHistoryButtons();
+
+			break;
+		}
+
 		case B_ABOUT_REQUESTED:
 			be_app->AboutRequested();
 			break;
@@ -368,6 +398,7 @@ MainWindow::_BuildLayout()
 	// History panel
 	fHistoryPanel = new BListView("historyPanel");
 	fHistoryPanel->SetInvocationMessage(new BMessage(M_SELECT_HISTORY));
+	fHistoryPanel->SetSelectionMessage(new BMessage(M_HISTORY_SELECTION_CHANGED));
 
 	BScrollView* historyScroll = new BScrollView("historyScroll", fHistoryPanel,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
@@ -375,15 +406,24 @@ MainWindow::_BuildLayout()
 	BStringView* historyLabel = new BStringView("historyLabel", "History");
 	historyLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 
+	fClearHistoryBtn = new BButton("clear", "Clear history", new BMessage(M_CLEAR_HISTORY));
+	fClearHistoryBtn->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+
+	fRemoveItemBtn = new BButton("deleteItem", "Delete selected", new BMessage(M_DELETE_HISTORY_ITEM));
+	fRemoveItemBtn->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+	fRemoveItemBtn->SetEnabled(false);
+
 	BView* historyPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							  .SetInsets(B_USE_WINDOW_INSETS)
 							  .Add(historyLabel)
 							  .Add(historyScroll)
+							  .Add(fRemoveItemBtn)
+							  .Add(fClearHistoryBtn)
 							  .View();
 	// Body tabs and preview split beneath it
 	BSplitView* requestAreaSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
-	requestAreaSplit->AddChild(fBodyTabView, 0.5f);
-	requestAreaSplit->AddChild(previewPanel, 0.5f);
+	requestAreaSplit->AddChild(fBodyTabView, 0.7f);
+	requestAreaSplit->AddChild(previewPanel, 0.3f);
 
 	BView* requestArea = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							 .Add(requestTopBar)
@@ -399,6 +439,7 @@ MainWindow::_BuildLayout()
 	outerSplit->AddChild(historyPanel, 0.2f);
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(outerSplit).End();
+	_UpdateHistoryButtons();
 }
 
 
@@ -419,7 +460,6 @@ MainWindow::_SendRequest()
 	BMenuItem* marked = fMethodMenu->FindMarked();
 	BString method(marked ? marked->Label() : "GET");
 
-	// BHttpRequest only takes a BUrl — set method separately via SetMethod().
 	BHttpRequest request(url);
 	request.SetMethod(BHttpMethod(method.String()));
 
@@ -465,6 +505,7 @@ MainWindow::_SendRequest()
 
 	HistoryItem* item = new HistoryItem(method, url.UrlString(), fPendingRequestBody, params);
 	fHistoryPanel->AddItem(item, 0);  // newest on top
+	_UpdateHistoryButtons();
 
 	// Send request
 	fCurrentResult = fSession.Execute(std::move(request), nullptr, BMessenger(this));
@@ -608,6 +649,7 @@ MainWindow::_RestoreValues(BMessage& settings)
         fHistoryPanel->AddItem(new HistoryItem(itemArchive));
         itemArchive.MakeEmpty();
     }
+	_UpdateHistoryButtons();
 }
 
 
@@ -639,4 +681,15 @@ MainWindow::_LoadHistoryItem(HistoryItem* item)
 
         param.MakeEmpty();
     }
+}
+
+
+void
+MainWindow::_UpdateHistoryButtons()
+{
+    bool hasItems = fHistoryPanel->CountItems() > 0;
+    fClearHistoryBtn->SetEnabled(hasItems);
+
+    bool hasSelection = fHistoryPanel->CurrentSelection() >= 0;
+    fRemoveItemBtn->SetEnabled(hasSelection);
 }

@@ -22,7 +22,10 @@ enum {
 	M_ADD_PARAMETER = 'padd',
 	M_REMOVE_PARAMETER = 'prem',
 	M_SELECT_PARAMETER = 'psel',
-	M_SELECT_HISTORY = 'hsel'
+	M_SELECT_HISTORY = 'hsel',
+	M_DELETE_HISTORY_ITEM = 'dhis',
+	M_CLEAR_HISTORY = 'clrh',
+	M_HISTORY_SELECTION_CHANGED = 'chis'
 };
 
 
