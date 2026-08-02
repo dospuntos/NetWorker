@@ -14,6 +14,8 @@
 #include <Catalog.h>
 #include <DataIO.h>
 #include <ErrorsExt.h>
+#include <File.h>
+#include <FindDirectory.h>
 #include <HttpFields.h>
 #include <HttpRequest.h>
 #include <HttpResult.h>
@@ -51,7 +53,12 @@ MainWindow::MainWindow()
 {
 	fMenuBar = _BuildMenu();
 	_BuildLayout();
-	fUrlField->SetText("https://httpbin.org/get");
+
+	// Load and restore settings
+	BMessage settings;
+	_LoadSettings(settings);
+	_RestoreValues(settings);
+
 }
 
 
@@ -59,6 +66,8 @@ MainWindow::~MainWindow()
 {
 	if (fCurrentResult.has_value())
 		fSession.Cancel(fCurrentResult.value());
+
+	_SaveSettings();
 }
 
 
@@ -185,9 +194,38 @@ MainWindow::MessageReceived(BMessage* message)
 
 		case M_SELECT_HISTORY:
 		{
-			BAlert* alert = new BAlert("Confirm", "Selected history item.", "OK", nullptr, nullptr,
-				B_WIDTH_FROM_WIDEST, B_OFFSET_SPACING, B_INFO_ALERT);
-			alert->Go();
+			int32 index = fHistoryPanel->CurrentSelection();
+			if (index >= 0) {
+				HistoryItem* item = static_cast<HistoryItem*>(
+					fHistoryPanel->ItemAt(index));
+
+				if (item != nullptr) {
+					BString text;
+					text << "Method: " << item->fMethod << "\n";
+					text << "URL: " << item->fUrl << "\n\n";
+					text << "Body:\n";
+					text << item->fBody;
+
+					BAlert* alert = new BAlert("History Item", text.String(), "Insert", "Close", nullptr,
+											B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_INFO_ALERT);
+
+					alert->SetShortcut(1, B_ESCAPE);
+					if (alert->Go() == 1)
+						break;
+
+					// Restore values
+					fUrlField->SetText(item->fUrl);
+					for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
+						BMenuItem* menuItem = fMethodMenu->ItemAt(i);
+
+						if (item->fMethod == menuItem->Label()) {
+							menuItem->SetMarked(true);
+							break;
+						}
+					}
+
+				}
+			}
 			break;
 		}
 
@@ -372,12 +410,6 @@ MainWindow::_BuildLayout()
 	requestAreaSplit->AddChild(fBodyTabView, 0.5f);
 	requestAreaSplit->AddChild(previewPanel, 0.5f);
 
-	// Outer container view
-	/* BSplitView* requestAreaSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
-	requestAreaSplit->AddChild(requestPanel, 0.5f);
-	requestAreaSplit->AddChild(previewPanel, 0.5f); */
-
-	// Combine top bar + split into one vertical group representing the whole request area
 	BView* requestArea = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							 .Add(requestTopBar)
 							 .Add(requestAreaSplit)
@@ -416,7 +448,7 @@ MainWindow::_SendRequest()
 	BHttpRequest request(url);
 	request.SetMethod(BHttpMethod(method.String()));
 
-	if (fBodyTabView->Selection() == 1) {
+	if (fBodyTabView->Selection() == 1) { // Form
 		fPendingRequestBody = "";
 		for (int32 i = 0; i < fParamsList->CountRows(); i++) {
 			BRow* row = fParamsList->RowAt(i);
@@ -434,7 +466,7 @@ MainWindow::_SendRequest()
 									   fPendingRequestBody.Length()),
 				"application/x-www-form-urlencoded", fPendingRequestBody.Length());
 		}
-	} else {
+	} else { // Raw text (expect JSON for now)
 		fPendingRequestBody = fRequestBodyView->Text();
 		if (fPendingRequestBody.Length() > 0 && method != "GET" && method != "HEAD") {
 			request.SetRequestBody(std::make_unique<BMemoryIO>(fPendingRequestBody.String(),
@@ -492,4 +524,87 @@ MainWindow::_UrlEncode(const BString& value)
 	}
 
 	return result;
+}
+
+
+status_t
+MainWindow::_LoadSettings(BMessage& settings)
+{
+	BPath path;
+	status_t status;
+	status = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
+	if (status != B_OK)
+		return status;
+
+	status = path.Append(kSettingsFile);
+	if (status != B_OK)
+		return status;
+
+	BFile file;
+	status = file.SetTo(path.Path(), B_READ_ONLY);
+	if (status != B_OK)
+		return status;
+
+	return settings.Unflatten(&file);
+}
+
+
+status_t
+MainWindow::_SaveSettings()
+{
+	BPath path;
+	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
+	if (status != B_OK)
+		return status;
+
+	status = path.Append(kSettingsFile);
+	if (status != B_OK)
+		return status;
+
+	BFile file;
+	status = file.SetTo(path.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+	if (status != B_OK)
+		return status;
+
+	BMessage settings;
+	settings.AddRect("main_window_rect", Frame());
+	settings.AddString("urlField", fUrlField->Text());
+
+	BMenuItem* marked = fMethodMenu->FindMarked();
+	settings.AddString("method", (marked ? marked->Label() : "GET"));
+
+	if (status == B_OK)
+		status = settings.Flatten(&file);
+
+	return status;
+}
+
+
+void
+MainWindow::_RestoreValues(BMessage& settings)
+{
+	BRect frame;
+	if (settings.FindRect("main_window_rect", &frame) == B_OK) {
+		MoveTo(frame.LeftTop());
+		ResizeTo(frame.Width(), frame.Height());
+		MoveOnScreen();
+	}
+
+	BString text;
+
+	// Restore values
+	if (settings.FindString("urlField", &text) == B_OK)
+		fUrlField->SetText(text.String());
+	else
+		fUrlField->SetText("https://httpbin.org/get");
+
+	if (settings.FindString("method", &text) == B_OK) {
+		for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
+			BMenuItem* menuItem = fMethodMenu->ItemAt(i);
+			if (text == menuItem->Label()) {
+				menuItem->SetMarked(true);
+				break;
+			}
+		}
+	}
 }

@@ -73,6 +73,10 @@ private:
 	BButton*          	fParamRemoveButton;
 
 	static BString _UrlEncode(const BString& value);
+	status_t _SaveSettings();
+	status_t	_LoadSettings(BMessage& settings);
+	void _RestoreValues(BMessage& settings);
+
 };
 
 class HistoryItem : public BStringItem {
