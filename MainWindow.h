@@ -6,6 +6,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "HistoryItem.h"
 #include <optional>
 
 #include <ColumnListView.h>
@@ -76,14 +77,8 @@ private:
 	status_t _SaveSettings();
 	status_t	_LoadSettings(BMessage& settings);
 	void _RestoreValues(BMessage& settings);
+	void _LoadHistoryItem(HistoryItem* item);
 
-};
-
-class HistoryItem : public BStringItem {
-public:
-	HistoryItem(BString label) : BStringItem(label) {}
-	BString fMethod, fUrl, fBody;
-	// Todo: add headers, params etc, maybe as a BMessage
 };
 
 #endif

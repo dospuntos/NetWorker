@@ -31,6 +31,7 @@ APP_MIME_SIG = application/x-vnd.jpw-NetWorker
 #	Also note that spaces in folder names do not work well with this Makefile.
 SRCS =  App.cpp \
 		MainWindow.cpp \
+		HistoryItem.cpp \
 		Constants.cpp
 
 #	Specify the resource definition files to use. Full or relative paths can be

@@ -196,41 +196,10 @@ MainWindow::MessageReceived(BMessage* message)
 		{
 			int32 index = fHistoryPanel->CurrentSelection();
 			if (index >= 0) {
-				HistoryItem* item = static_cast<HistoryItem*>(
-					fHistoryPanel->ItemAt(index));
+				HistoryItem* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
 
-				if (item != nullptr) {
-					BString text;
-					text << "Method: " << item->fMethod << "\n";
-					text << "URL: " << item->fUrl << "\n\n";
-					text << "Body:\n";
-					text << item->fBody;
-
-					BAlert* alert = new BAlert("History Item", text.String(), "Remove", "Insert", "Close",
-											B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_INFO_ALERT);
-
-					alert->SetShortcut(2, B_ESCAPE);
-					int response = alert->Go();
-
-					if (response == 2)
-						break;
-					else if (response == 1) {
-
-						// Restore values
-						fUrlField->SetText(item->fUrl);
-						for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
-							BMenuItem* menuItem = fMethodMenu->ItemAt(i);
-
-							if (item->fMethod == menuItem->Label()) {
-								menuItem->SetMarked(true);
-								break;
-							}
-						}
-					} else {
-						fHistoryPanel->RemoveItem(index);
-					}
-
-				}
+				if (item != nullptr)
+					_LoadHistoryItem(item);
 			}
 			break;
 		}
@@ -294,7 +263,7 @@ MainWindow::_BuildLayout()
 	// Method menu
 	fMethodMenu = new BPopUpMenu("GET");
 	const char* methods[] = {"GET", "QUERY", "POST", "PUT", "PATCH", "DELETE", nullptr};
-	for (int i = 0; methods[i] != nullptr; i++)
+	for (int i = 0; methods[i] != nullptr; ++i)
 		fMethodMenu->AddItem(new BMenuItem(methods[i], nullptr));
 	fMethodMenu->ItemAt(0)->SetMarked(true);
 
@@ -456,7 +425,7 @@ MainWindow::_SendRequest()
 
 	if (fBodyTabView->Selection() == 1) { // Form
 		fPendingRequestBody = "";
-		for (int32 i = 0; i < fParamsList->CountRows(); i++) {
+		for (int32 i = 0; i < fParamsList->CountRows(); ++i) {
 			BRow* row = fParamsList->RowAt(i);
 			auto* keyField = static_cast<BStringField*>(row->GetField(0));
 			auto* valField = static_cast<BStringField*>(row->GetField(1));
@@ -482,13 +451,20 @@ MainWindow::_SendRequest()
 	}
 
 	// Add to history
-	BString label;
-	label << method << " " << url.UrlString();
-	HistoryItem* item = new HistoryItem(label);
-	item->fMethod = method;
-	item->fUrl = url.UrlString();
-	item->fBody = fPendingRequestBody;
-	fHistoryPanel->AddItem(item, 0);
+	BMessage params;
+	for (int32 i = 0; i < fParamsList->CountRows(); ++i) {
+		BRow* row = fParamsList->RowAt(i);
+		auto* keyField = static_cast<BStringField*>(row->GetField(0));
+		auto* valField = static_cast<BStringField*>(row->GetField(1));
+
+		BMessage param;
+		param.AddString("key", keyField->String());
+		param.AddString("value", valField->String());
+		params.AddMessage("param", &param);
+	}
+
+	HistoryItem* item = new HistoryItem(method, url.UrlString(), fPendingRequestBody, params);
+	fHistoryPanel->AddItem(item, 0);  // newest on top
 
 	// Send request
 	fCurrentResult = fSession.Execute(std::move(request), nullptr, BMessenger(this));
@@ -517,7 +493,7 @@ MainWindow::_UrlEncode(const BString& value)
 	BString result;
 	const char* str = value.String();
 
-	for (int32 i = 0; str[i] != '\0'; i++) {
+	for (int32 i = 0; str[i] != '\0'; ++i) {
 		unsigned char c = str[i];
 
 		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
@@ -581,6 +557,14 @@ MainWindow::_SaveSettings()
 	BMenuItem* marked = fMethodMenu->FindMarked();
 	settings.AddString("method", (marked ? marked->Label() : "GET"));
 
+	// save history
+	for (int32 i = 0; i < fHistoryPanel->CountItems(); ++i) {
+		auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(i));
+		BMessage itemArchive;
+		item->Archive(itemArchive);
+		settings.AddMessage("historyItem", &itemArchive);
+	}
+
 	if (status == B_OK)
 		status = settings.Flatten(&file);
 
@@ -607,7 +591,7 @@ MainWindow::_RestoreValues(BMessage& settings)
 		fUrlField->SetText("https://httpbin.org/get");
 
 	if (settings.FindString("method", &text) == B_OK) {
-		for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
+		for (int32 i = 0; i < fMethodMenu->CountItems(); ++i) {
 			BMenuItem* menuItem = fMethodMenu->ItemAt(i);
 			if (text == menuItem->Label()) {
 				menuItem->SetMarked(true);
@@ -615,4 +599,44 @@ MainWindow::_RestoreValues(BMessage& settings)
 			}
 		}
 	}
+
+	// Restore history
+	fHistoryPanel->MakeEmpty(); // just in case
+
+    BMessage itemArchive;
+    for (int32 i = 0; settings.FindMessage("historyItem", i, &itemArchive) == B_OK; ++i) {
+        fHistoryPanel->AddItem(new HistoryItem(itemArchive));
+        itemArchive.MakeEmpty();
+    }
+}
+
+
+void
+MainWindow::_LoadHistoryItem(HistoryItem* item)
+{
+    fUrlField->SetText(item->fUrl.String());
+    fRequestBodyView->SetText(item->fBody.String());
+
+    for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
+        BMenuItem* mi = fMethodMenu->ItemAt(i);
+        if (item->fMethod == mi->Label()) {
+            mi->SetMarked(true);
+            break;
+        }
+    }
+
+    fParamsList->Clear();
+    BMessage param;
+    for (int32 i = 0; item->fParams.FindMessage("param", i, &param) == B_OK; i++) {
+        BString key, value;
+        param.FindString("key", &key);
+        param.FindString("value", &value);
+
+        BRow* row = new BRow();
+        row->SetField(new BStringField(key.String()), 0);
+        row->SetField(new BStringField(value.String()), 1);
+        fParamsList->AddRow(row);
+
+        param.MakeEmpty();
+    }
 }
