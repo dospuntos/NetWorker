@@ -44,6 +44,17 @@ using BPrivate::Network::BHttpSession;
 #undef B_TRANSLATION_CONTEXT
 #define B_TRANSLATION_CONTEXT "MainView"
 
+static const char* kMethods[] = {
+    "GET",
+    "HEAD",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+    "QUERY",
+    nullptr
+};
 
 MainWindow::MainWindow()
 	:
@@ -80,8 +91,15 @@ MainWindow::MessageReceived(BMessage* message)
 	switch (message->what) {
 
 		case M_SEND_REQUEST:
-			_SendRequest();
+			if (fCurrentResult.has_value()) {
+			fSession.Cancel(fCurrentResult.value());
+			fCurrentResult.reset();
+			fSendButton->SetLabel("Send");
+			fStatusLabel->SetText("Cancelled");
 			break;
+		}
+		_SendRequest();
+		break;
 
 		case M_CLEAR_RESPONSE:
 			_ClearResponse();
@@ -97,7 +115,7 @@ MainWindow::MessageReceived(BMessage* message)
 
 			if (!ok) {
 				fStatusLabel->SetText("Request failed");
-				fSendButton->SetEnabled(true);
+				fSendButton->SetLabel("Send");
 				fCurrentResult.reset();
 				break;
 			}
@@ -136,7 +154,7 @@ MainWindow::MessageReceived(BMessage* message)
 			else
 				fResponseBodyView->SetText("(no body)");
 
-			fSendButton->SetEnabled(true);
+			fSendButton->SetLabel("Send");
 			fCurrentResult.reset();
 			break;
 		}
@@ -292,9 +310,8 @@ MainWindow::_BuildLayout()
 {
 	// Method menu
 	fMethodMenu = new BPopUpMenu("GET");
-	const char* methods[] = {"GET", "QUERY", "POST", "PUT", "PATCH", "DELETE", nullptr};
-	for (int i = 0; methods[i] != nullptr; ++i)
-		fMethodMenu->AddItem(new BMenuItem(methods[i], nullptr));
+	for (int i = 0; kMethods[i] != nullptr; ++i)
+		fMethodMenu->AddItem(new BMenuItem(kMethods[i], nullptr));
 	fMethodMenu->ItemAt(0)->SetMarked(true);
 
 	fMethodField = new BMenuField("method", nullptr, fMethodMenu);
@@ -396,7 +413,7 @@ MainWindow::_BuildLayout()
 	BStringView* previewLabel = new BStringView("previewLabel", "Request preview");
 	previewLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 
-	fPreviewPanelScroll = new BScrollView("responseBodyScroll", fPreviewPanel,
+	fPreviewPanelScroll = new BScrollView("previewScroll", fPreviewPanel,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 	BView* previewPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							  .SetInsets(B_USE_WINDOW_INSETS)
@@ -429,13 +446,21 @@ MainWindow::_BuildLayout()
 							  .Add(fRemoveItemBtn)
 							  .Add(fClearHistoryBtn)
 							  .View();
+
+	BView* bodyPanel = BLayoutBuilder::Group<>(B_VERTICAL)
+							.SetInsets(B_USE_WINDOW_INSETS)
+							.Add(fBodyTabView)
+							.View();
+
+
 	// Body tabs and preview split beneath it
 	BSplitView* requestAreaSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
-	requestAreaSplit->AddChild(fBodyTabView, 0.7f);
+	requestAreaSplit->AddChild(bodyPanel, 0.7f);
 	requestAreaSplit->AddChild(previewPanel, 0.3f);
 	requestAreaSplit->SetItemCollapsed(1, true);
 
 	BView* requestArea = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+							//.SetInsets(B_USE_WINDOW_INSETS)
 							 .Add(requestTopBar)
 							 .Add(requestAreaSplit)
 							 .View();
@@ -520,7 +545,7 @@ MainWindow::_SendRequest()
 	// Send request
 	fCurrentResult = fSession.Execute(std::move(request), nullptr, BMessenger(this));
 
-	fSendButton->SetEnabled(false);
+	fSendButton->SetLabel("Cancel");
 	fStatusLabel->SetText("Sending" B_UTF8_ELLIPSIS);
 	fResponseHeadersList->Clear();
 	fResponseBodyView->SetText("");
