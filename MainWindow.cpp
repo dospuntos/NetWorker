@@ -316,18 +316,6 @@ MainWindow::_BuildLayout()
 	// Status label
 	fStatusLabel = new BStringView("status", "(no response yet)");
 
-	// Response headers
-	fResponseHeadersList = new BColumnListView("responseHeaders",
-		B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE, B_FANCY_BORDER);
-	fResponseHeadersList->AddColumn(new BStringColumn("Header", 180, 80, 400, 0), 0);
-	fResponseHeadersList->AddColumn(new BStringColumn("Value", 500, 100, 2000, 0), 1);
-	fResponseHeadersList->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 140));
-
-	// Response body
-	fResponseBodyView = new BTextView("responseBody");
-	fResponseBodyView->MakeEditable(false);
-	fResponseBodyScroll = new BScrollView("responseBodyScroll", fResponseBodyView,
-		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 	BButton* clearButton = new BButton("clear", "Clear", new BMessage(M_CLEAR_RESPONSE));
 
 	// Params tab
@@ -368,6 +356,28 @@ MainWindow::_BuildLayout()
 	fBodyTabView->AddTab(paramsPanel);
 	fBodyTabView->TabAt(1)->SetLabel("Form");
 
+	// Response headers
+	fResponseHeadersList = new BColumnListView("responseHeaders",
+		B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE, B_FANCY_BORDER);
+	fResponseHeadersList->AddColumn(new BStringColumn("Header", 180, 80, 400, 0), 0);
+	fResponseHeadersList->AddColumn(new BStringColumn("Value", 500, 100, 2000, 0), 1);
+	fResponseHeadersList->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 140));
+
+	// Response body
+	fResponseBodyView = new BTextView("responseBody");
+	fResponseBodyView->MakeEditable(false);
+	fResponseBodyScroll = new BScrollView("responseBodyScroll", fResponseBodyView,
+		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
+
+	// Response tabs
+	fResponseHeadersList->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
+	fResponseBodyScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
+	fResponseTabView = new BTabView("responseTabs");
+	fResponseTabView->AddTab(fResponseHeadersList);
+	fResponseTabView->TabAt(0)->SetLabel("Headers");
+	fResponseTabView->AddTab(fResponseBodyScroll);
+	fResponseTabView->TabAt(1)->SetLabel("Body");
+
 	// Response panel
 	BView* responsePanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							   .SetInsets(B_USE_WINDOW_INSETS)
@@ -376,8 +386,7 @@ MainWindow::_BuildLayout()
 								   .AddGlue()
 								   .Add(clearButton)
 								   .End()
-							   .Add(fResponseHeadersList)
-							   .Add(fResponseBodyScroll)
+							   .Add(fResponseTabView)
 							   .View();
 
 	// Preview panel
@@ -424,6 +433,7 @@ MainWindow::_BuildLayout()
 	BSplitView* requestAreaSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
 	requestAreaSplit->AddChild(fBodyTabView, 0.7f);
 	requestAreaSplit->AddChild(previewPanel, 0.3f);
+	requestAreaSplit->SetItemCollapsed(1, true);
 
 	BView* requestArea = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							 .Add(requestTopBar)

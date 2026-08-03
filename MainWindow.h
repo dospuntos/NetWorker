@@ -69,6 +69,7 @@ private:
 	BButton*			fRemoveItemBtn;
 
 	BTabView*        	fBodyTabView;
+	BTabView*			fResponseTabView;
 	BColumnListView*  	fParamsList;
 	BTextControl*     	fParamKeyField;
 	BTextControl*     	fParamValueField;
