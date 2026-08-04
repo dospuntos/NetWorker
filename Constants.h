@@ -16,6 +16,9 @@ enum {
 	M_NEW_FILE = 'fnew',
 	M_SHOW_HELP = 'help',
 	M_REPORT_A_BUG = 'bugs',
+	M_SHOW_SETTINGS = 'stng',
+	M_NOT_IMPLEMENTED = 'nimp',
+	M_TOGGLE_PREVIEW = 'tprv',
 
 	M_SEND_REQUEST = 'send',
 	M_CLEAR_RESPONSE = 'clrr',
@@ -25,7 +28,8 @@ enum {
 	M_SELECT_HISTORY = 'hsel',
 	M_DELETE_HISTORY_ITEM = 'dhis',
 	M_CLEAR_HISTORY = 'clrh',
-	M_HISTORY_SELECTION_CHANGED = 'chis'
+	M_HISTORY_SELECTION_CHANGED = 'chis',
+	M_UPDATE_PREVIEW = 'upvw'
 };
 
 

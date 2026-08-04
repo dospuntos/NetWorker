@@ -4,10 +4,10 @@
  */
 
 #include "MainWindow.h"
+#include "IconMenuItem.h"
 
 #include <cctype>
 
-#include "Constants.h"
 #include <Alert.h>
 #include <Application.h>
 #include <Button.h>
@@ -31,7 +31,6 @@
 #include <StringView.h>
 #include <SupportDefs.h>
 #include <TextControl.h>
-#include <TextView.h>
 #include <Url.h>
 #include <string>
 
@@ -210,6 +209,10 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_UPDATE_PREVIEW:
+			_UpdatePreview();
+			break;
+
 		case M_SELECT_HISTORY:
 		{
 			int32 index = fHistoryPanel->CurrentSelection();
@@ -224,11 +227,22 @@ MainWindow::MessageReceived(BMessage* message)
 
 		case M_DELETE_HISTORY_ITEM:
 		{
-			int32 index = fHistoryPanel->CurrentSelection();
-			if (index >= 0) {
-				fHistoryPanel->RemoveItem(index);
-				_SaveSettings(); // Avoid stale history on disk
+			BList selectedItems;
+			int32 index;
+			for (int32 i = 0; (index = fHistoryPanel->CurrentSelection(i)) >= 0; i++)
+				selectedItems.AddItem((void*)(addr_t)index);
+
+			if (selectedItems.CountItems() == 0)
+				break;
+
+			for (int32 i = selectedItems.CountItems() - 1; i >= 0; i--) {
+				int32 idx = (int32)(addr_t)selectedItems.ItemAt(i);
+				BListItem* item = fHistoryPanel->RemoveItem(idx);
+				delete item;
 			}
+
+			_UpdateHistoryButtons();
+			_SaveSettings(); // Avoid stale history on disk
 			break;
 		}
 
@@ -249,6 +263,26 @@ MainWindow::MessageReceived(BMessage* message)
 			}
 			_UpdateHistoryButtons();
 
+			break;
+		}
+
+		case M_NOT_IMPLEMENTED:
+		{
+			BAlert* alert = new BAlert("Coming Soon", "This feature is planned but has not been implemented yet.",
+				"OK", nullptr, nullptr, B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_INFO_ALERT);
+			alert->SetShortcut(0, B_ESCAPE);
+			alert->Go();
+			break;
+		}
+
+		case M_TOGGLE_PREVIEW:
+		{
+			bool visible = !fRequestAreaSplit->IsItemCollapsed(1);
+
+			fRequestAreaSplit->SetItemCollapsed(1, visible);
+
+			if (BMenuItem* item = fMenuBar->FindItem(M_TOGGLE_PREVIEW))
+				item->SetMarked(!visible);
 			break;
 		}
 
@@ -285,19 +319,44 @@ MainWindow::_BuildMenu()
 	BMenu* menu;
 	BMenuItem* item;
 
-	menu = new BMenu(B_TRANSLATE("File"));
-
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("About" B_UTF8_ELLIPSIS), new BMessage(B_ABOUT_REQUESTED)));
+	// App menu
+	menu = new BMenu("");
+	item = new BMenuItem(B_TRANSLATE("About" B_UTF8_ELLIPSIS), new BMessage(B_ABOUT_REQUESTED));
+	item->SetTarget(be_app);
+	menu->AddItem(item);
 	menu->AddItem(
 		new BMenuItem(B_TRANSLATE("Help" B_UTF8_ELLIPSIS), new BMessage(M_SHOW_HELP), 'H'));
 	menu->AddItem(
 		new BMenuItem(B_TRANSLATE("Report a bug" B_UTF8_ELLIPSIS), new BMessage(M_REPORT_A_BUG)));
 	menu->AddSeparatorItem();
-	// menu->AddItem(new BMenuItem(B_TRANSLATE("Settings" B_UTF8_ELLIPSIS),
-	// new BMessage(M_SHOW_SETTINGS), ',', B_COMMAND_KEY));
-	// menu->AddSeparatorItem();
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Settings" B_UTF8_ELLIPSIS),
+		new BMessage(M_SHOW_SETTINGS), ',', B_COMMAND_KEY));
+	menu->AddSeparatorItem();
 	menu->AddItem(new BMenuItem(B_TRANSLATE("Quit"), new BMessage(B_QUIT_REQUESTED), 'Q'));
+
+	IconMenuItem* iconMenu = new IconMenuItem(menu, NULL, kApplicationSignature, B_MINI_ICON);
+	menuBar->AddItem(iconMenu);
+
+	// File menu
+	menu = new BMenu(B_TRANSLATE("File"));
+
+	menu->AddItem(
+		new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_CLEAR_RESPONSE)));
+	menu->AddSeparatorItem();
+	menu->AddItem(
+		new BMenuItem(B_TRANSLATE("Import" B_UTF8_ELLIPSIS), new BMessage(M_NOT_IMPLEMENTED)));
+	menu->AddItem(
+		new BMenuItem(B_TRANSLATE("Export" B_UTF8_ELLIPSIS), new BMessage(M_NOT_IMPLEMENTED)));
+	menu->AddSeparatorItem();
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Close"), new BMessage(B_QUIT_REQUESTED)));
+
+	menuBar->AddItem(menu);
+
+	// View menu
+	menu = new BMenu(B_TRANSLATE("View"));
+
+	menu->AddItem(
+		new BMenuItem(B_TRANSLATE("Request preview"), new BMessage(M_TOGGLE_PREVIEW)));
 
 	menuBar->AddItem(menu);
 
@@ -311,7 +370,7 @@ MainWindow::_BuildLayout()
 	// Method menu
 	fMethodMenu = new BPopUpMenu("GET");
 	for (int i = 0; kMethods[i] != nullptr; ++i)
-		fMethodMenu->AddItem(new BMenuItem(kMethods[i], nullptr));
+		fMethodMenu->AddItem(new BMenuItem(kMethods[i], new BMessage(M_UPDATE_PREVIEW)));
 	fMethodMenu->ItemAt(0)->SetMarked(true);
 
 	fMethodField = new BMenuField("method", nullptr, fMethodMenu);
@@ -320,13 +379,14 @@ MainWindow::_BuildLayout()
 
 	// URL bar
 	fUrlField = new BTextControl("url", nullptr, "", nullptr);
+	fUrlField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 
 	// Send button
 	fSendButton = new BButton("send", "Send", new BMessage(M_SEND_REQUEST));
 	fSendButton->MakeDefault(true);
 
 	// Request body
-	fRequestBodyView = new BTextView("requestBody");
+	fRequestBodyView = new PreviewTextView("requestBody");
 	fRequestBodyScroll = new BScrollView("requestBodyScroll", fRequestBodyView,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 
@@ -367,11 +427,18 @@ MainWindow::_BuildLayout()
 								 .End()
 							 .View();
 
-	fBodyTabView = new BTabView("bodyTabs");
+	BTextView* authTextView = new BTextView("authView");
+	BView* authPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+							.Add(authTextView)
+							.View();
+
+	fBodyTabView = new PreviewTabView("bodyTabs");
 	fBodyTabView->AddTab(fRequestBodyScroll);
 	fBodyTabView->TabAt(0)->SetLabel("Raw");
 	fBodyTabView->AddTab(paramsPanel);
 	fBodyTabView->TabAt(1)->SetLabel("Form");
+	fBodyTabView->AddTab(authPanel);
+	fBodyTabView->TabAt(2)->SetLabel("Authorization");
 
 	// Response headers
 	fResponseHeadersList = new BColumnListView("responseHeaders",
@@ -422,7 +489,7 @@ MainWindow::_BuildLayout()
 							  .View();
 
 	// History panel
-	fHistoryPanel = new BListView("historyPanel");
+	fHistoryPanel = new BListView("historyPanel", B_MULTIPLE_SELECTION_LIST);
 	fHistoryPanel->SetInvocationMessage(new BMessage(M_SELECT_HISTORY));
 	fHistoryPanel->SetSelectionMessage(new BMessage(M_HISTORY_SELECTION_CHANGED));
 
@@ -454,15 +521,15 @@ MainWindow::_BuildLayout()
 
 
 	// Body tabs and preview split beneath it
-	BSplitView* requestAreaSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
-	requestAreaSplit->AddChild(bodyPanel, 0.7f);
-	requestAreaSplit->AddChild(previewPanel, 0.3f);
-	requestAreaSplit->SetItemCollapsed(1, true);
+	fRequestAreaSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
+	fRequestAreaSplit->AddChild(bodyPanel, 0.7f);
+	fRequestAreaSplit->AddChild(previewPanel, 0.3f);
+	fRequestAreaSplit->SetItemCollapsed(1, true);
 
 	BView* requestArea = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							//.SetInsets(B_USE_WINDOW_INSETS)
 							 .Add(requestTopBar)
-							 .Add(requestAreaSplit)
+							 .Add(fRequestAreaSplit)
 							 .View();
 
 	fSplitView = new BSplitView(B_VERTICAL, B_USE_SMALL_SPACING);
@@ -475,6 +542,7 @@ MainWindow::_BuildLayout()
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(outerSplit).End();
 	_UpdateHistoryButtons();
+	_UpdatePreview();
 }
 
 
@@ -727,4 +795,54 @@ MainWindow::_UpdateHistoryButtons()
 
     bool hasSelection = fHistoryPanel->CurrentSelection() >= 0;
     fRemoveItemBtn->SetEnabled(hasSelection);
+}
+
+
+void
+MainWindow::_UpdatePreview()
+{
+    BMenuItem* marked = fMethodMenu->FindMarked();
+    BString method(marked ? marked->Label() : "GET");
+    BString urlText(fUrlField->Text());
+
+    BUrl url(urlText, false);
+
+    BString preview;
+    preview << method << " " << urlText << " HTTP/1.1\n";
+    if (url.IsValid())
+        preview << "Host: " << url.Host() << "\n";
+
+    if (fBodyTabView->Selection() == 1) {
+        // Form mode
+        BString encoded;
+        for (int32 i = 0; i < fParamsList->CountRows(); i++) {
+            BRow* row = fParamsList->RowAt(i);
+            auto* keyField = static_cast<BStringField*>(row->GetField(0));
+            auto* valField = static_cast<BStringField*>(row->GetField(1));
+
+            if (i > 0)
+                encoded << "&";
+            encoded << _UrlEncode(keyField->String())
+                    << "=" << _UrlEncode(valField->String());
+        }
+
+        if (encoded.Length() > 0 && method != "GET" && method != "HEAD") {
+            preview << "Content-Type: application/x-www-form-urlencoded\n";
+            preview << "Content-Length: " << encoded.Length() << "\n\n";
+            preview << encoded;
+        } else {
+            preview << "\n";
+        }
+    } else {
+        BString bodyText(fRequestBodyView->Text());
+        if (bodyText.Length() > 0 && method != "GET" && method != "HEAD") {
+            preview << "Content-Type: application/json\n";
+            preview << "Content-Length: " << bodyText.Length() << "\n\n";
+            preview << bodyText;
+        } else {
+            preview << "\n";
+        }
+    }
+
+    fPreviewPanel->SetText(preview.String());
 }
