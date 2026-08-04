@@ -11,6 +11,7 @@
 extern const char* kApplicationSignature;
 extern const char* kApplicationName;
 extern const char* kSettingsFile;
+extern const char* kSettingsDirName;
 
 enum {
 	M_NEW_FILE = 'fnew',

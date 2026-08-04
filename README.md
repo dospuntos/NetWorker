@@ -2,7 +2,11 @@
 
 ![Screenshot](screenshot.png)
 
-**NetWorker** is a lightweight, Haiku-native REST API client, inspired by tools like Postman and HttpShout. Create, send and inspecting HTTP requests.
+**NetWorker** is a lightweight, Haiku-native REST API client, inspired by tools like Postman and HttpShout. Create, send, and inspect HTTP requests.
+
+Built using the `netservices2` library.
+
+Compose a request with method, URL, headers, form parameters, or a raw body, authenticate with Basic, Bearer, or API key auth. Each request is saved in a history list, and can be restored.
 
 ---
 

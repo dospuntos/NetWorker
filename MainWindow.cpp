@@ -16,6 +16,7 @@
 #include <CardLayout.h>
 #include <Catalog.h>
 #include <DataIO.h>
+#include <Directory.h>
 #include <ErrorsExt.h>
 #include <File.h>
 #include <FindDirectory.h>
@@ -826,6 +827,10 @@ MainWindow::_LoadSettings(BMessage& settings)
 	if (status != B_OK)
 		return status;
 
+	status = path.Append(kSettingsDirName);
+	if (status != B_OK)
+		return status;
+
 	status = path.Append(kSettingsFile);
 	if (status != B_OK)
 		return status;
@@ -844,6 +849,14 @@ MainWindow::_SaveSettings()
 {
 	BPath path;
 	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
+	if (status != B_OK)
+		return status;
+
+	status = path.Append(kSettingsDirName);
+	if (status != B_OK)
+		return status;
+
+	status = create_directory(path.Path(), 0755);
 	if (status != B_OK)
 		return status;
 

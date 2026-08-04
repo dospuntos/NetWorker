@@ -11,4 +11,5 @@
 
 const char* kApplicationSignature = "application/x-vnd.jpw-NetWorker";
 const char* kApplicationName = B_TRANSLATE_SYSTEM_NAME("NetWorker");
+const char* kSettingsDirName = "NetWorker";
 const char* kSettingsFile = "NetWorker_settings";
