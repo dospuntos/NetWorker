@@ -15,7 +15,8 @@
 class HistoryItem : public BStringItem {
 public:
     HistoryItem(const BString& method, const BString& url,
-                const BString& body, const BMessage& params);
+                const BString& body, const BMessage& params,
+                const BString& authType, const BMessage& authValues);
     explicit HistoryItem(const BMessage& archive);
 
     status_t Archive(BMessage& archive) const;
@@ -24,6 +25,8 @@ public:
     BString  fUrl;
     BString  fBody;
     BMessage fParams;
+    BString  fAuthType;
+    BMessage fAuthValues;
 
 private:
     static BString _BuildLabel(const BString& method, const BString& url);

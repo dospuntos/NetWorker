@@ -7,7 +7,6 @@
 #define MAINWINDOW_H
 
 #include "HistoryItem.h"
-#include "Constants.h"
 #include <optional>
 
 #include <ColumnListView.h>
@@ -25,8 +24,10 @@ using BPrivate::Network::BHttpSession;
 using BPrivate::Network::BHttpResult;
 using BPrivate::Network::BHttpFields;
 
+class BCardLayout;
 class BMenuField;
 class BPopUpMenu;
+class BRadioButton;
 class BTextControl;
 class BScrollView;
 class BStringView;
@@ -77,6 +78,19 @@ private:
 	BButton*          	fParamAddButton;
 	BButton*          	fParamRemoveButton;
 
+	BRadioButton*   fAuthNoneRadio;
+	BRadioButton*   fAuthBasicRadio;
+	BRadioButton*   fAuthBearerRadio;
+	BRadioButton*   fAuthApiKeyRadio;
+
+	BCardLayout*    fAuthCardLayout;
+
+	BTextControl*   fAuthUsernameField;
+	BTextControl*   fAuthPasswordField;
+	BTextControl*   fAuthTokenField;
+	BTextControl*   fAuthApiKeyNameField;
+	BTextControl*   fAuthApiKeyValueField;
+
 	static BString _UrlEncode(const BString& value);
 	status_t _SaveSettings();
 	status_t	_LoadSettings(BMessage& settings);
@@ -84,42 +98,9 @@ private:
 	void _LoadHistoryItem(HistoryItem* item);
 	void _UpdateHistoryButtons();
 	void _UpdatePreview();
-
-};
-
-
-class PreviewTextView : public BTextView {
-
-public:
-    PreviewTextView(const char* name) : BTextView(name) {}
-
-    void InsertText(const char* text, int32 length, int32 offset,
-        const text_run_array* runs) override
-    {
-        BTextView::InsertText(text, length, offset, runs);
-        if (Window())
-            Window()->PostMessage(M_UPDATE_PREVIEW);
-    }
-
-    void DeleteText(int32 start, int32 finish) override
-    {
-        BTextView::DeleteText(start, finish);
-        if (Window())
-            Window()->PostMessage(M_UPDATE_PREVIEW);
-    }
-};
-
-
-class PreviewTabView : public BTabView {
-public:
-    PreviewTabView(const char* name) : BTabView(name) {}
-
-    void Select(int32 index) override
-    {
-        BTabView::Select(index);
-        if (Window())
-            Window()->PostMessage(M_UPDATE_PREVIEW);
-    }
+	void _ApplyAuth(BHttpFields& fields);
+	BString _CurrentAuthType() const;
+	BMessage _CurrentAuthValues() const;
 };
 
 #endif

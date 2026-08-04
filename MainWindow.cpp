@@ -4,13 +4,16 @@
  */
 
 #include "MainWindow.h"
+#include "Constants.h"
 #include "IconMenuItem.h"
 
+#include <RadioButton.h>
 #include <cctype>
 
 #include <Alert.h>
 #include <Application.h>
 #include <Button.h>
+#include <CardLayout.h>
 #include <Catalog.h>
 #include <DataIO.h>
 #include <ErrorsExt.h>
@@ -54,6 +57,72 @@ static const char* kMethods[] = {
     "QUERY",
     nullptr
 };
+
+namespace {
+
+class PreviewTextView : public BTextView {
+
+	public:
+		PreviewTextView(const char* name) : BTextView(name) {}
+
+		void InsertText(const char* text, int32 length, int32 offset,
+			const text_run_array* runs) override
+		{
+			BTextView::InsertText(text, length, offset, runs);
+			if (Window())
+				Window()->PostMessage(M_UPDATE_PREVIEW);
+		}
+
+		void DeleteText(int32 start, int32 finish) override
+		{
+			BTextView::DeleteText(start, finish);
+			if (Window())
+				Window()->PostMessage(M_UPDATE_PREVIEW);
+		}
+};
+
+
+class PreviewTabView : public BTabView {
+	public:
+		PreviewTabView(const char* name) : BTabView(name) {}
+
+		void Select(int32 index) override
+		{
+			BTabView::Select(index);
+			if (Window())
+				Window()->PostMessage(M_UPDATE_PREVIEW);
+		}
+};
+
+
+BString
+Base64Encode(const BString& input)
+{
+	static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+	BString output;
+	int32 len = input.Length();
+	const unsigned char* data = (const unsigned char*)input.String();
+
+	for (int32 i = 0; i < len; i += 3) {
+		int32 chunkLen = std::min((int32)3, len - i);
+		uint32 chunk = data[i] << 16;
+		if (chunkLen > 1)
+			chunk |= data[i + 1] << 8;
+		if (chunkLen > 2)
+			chunk |= data[i + 2];
+
+		output << table[(chunk >> 18) & 0x3F];
+		output << table[(chunk >> 12) & 0x3F];
+		output << (chunkLen > 1 ? table[(chunk >> 6) & 0x3F] : '=');
+		output << (chunkLen > 2 ? table[chunk & 0x3F] : '=');
+	}
+
+	return output;
+}
+
+} // namespace
+
 
 MainWindow::MainWindow()
 	:
@@ -209,9 +278,35 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_AUTH_TYPE_CHANGED:
+		{
+			int32 index = 0;
+			if (fAuthBasicRadio->Value() == B_CONTROL_ON)
+				index = 1;
+			else if (fAuthBearerRadio->Value() == B_CONTROL_ON)
+				index = 2;
+			else if (fAuthApiKeyRadio->Value() == B_CONTROL_ON)
+				index = 3;
+
+			fAuthCardLayout->SetVisibleItem(index);
+			break;
+		}
+
 		case M_UPDATE_PREVIEW:
+		{
+			BMenuItem* marked = fMethodMenu->FindMarked();
+			BString method(marked ? marked->Label() : "GET");
+			bool bodyAllowed = (method != "GET" && method != "HEAD");
+
+			fBodyTabView->TabAt(0)->SetEnabled(bodyAllowed); // Raw
+			fBodyTabView->TabAt(1)->SetEnabled(bodyAllowed); // Form
+
+			if (!bodyAllowed && fBodyTabView->Selection() < 2)
+				fBodyTabView->Select(2); // jump to Authorization tab
+
 			_UpdatePreview();
 			break;
+		}
 
 		case M_SELECT_HISTORY:
 		{
@@ -374,8 +469,8 @@ MainWindow::_BuildLayout()
 	fMethodMenu->ItemAt(0)->SetMarked(true);
 
 	fMethodField = new BMenuField("method", nullptr, fMethodMenu);
-	fMethodField->SetExplicitMinSize(BSize(90, B_SIZE_UNSET));
-	fMethodField->SetExplicitMaxSize(BSize(90, B_SIZE_UNSET));
+	fMethodField->SetExplicitMinSize(BSize(120, B_SIZE_UNSET));
+	fMethodField->SetExplicitMaxSize(BSize(120, B_SIZE_UNSET));
 
 	// URL bar
 	fUrlField = new BTextControl("url", nullptr, "", nullptr);
@@ -389,6 +484,67 @@ MainWindow::_BuildLayout()
 	fRequestBodyView = new PreviewTextView("requestBody");
 	fRequestBodyScroll = new BScrollView("requestBodyScroll", fRequestBodyView,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
+
+	// Auth type radio buttons
+	fAuthNoneRadio = new BRadioButton("authNone", "None", new BMessage(M_AUTH_TYPE_CHANGED));
+	fAuthBasicRadio = new BRadioButton("authBasic", "Basic", new BMessage(M_AUTH_TYPE_CHANGED));
+	fAuthBearerRadio
+		= new BRadioButton("authBearer", "Bearer token", new BMessage(M_AUTH_TYPE_CHANGED));
+	fAuthApiKeyRadio = new BRadioButton("authApiKey", "API key", new BMessage(M_AUTH_TYPE_CHANGED));
+	fAuthNoneRadio->SetValue(B_CONTROL_ON);
+
+	BView* authTypeRow = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
+							 .Add(fAuthNoneRadio)
+							 .Add(fAuthBasicRadio)
+							 .Add(fAuthBearerRadio)
+							 .Add(fAuthApiKeyRadio)
+							 .AddGlue()
+							 .View();
+
+	// Card 0: None
+	BView* authNoneCard = new BView("authNoneCard", B_WILL_DRAW);
+
+	// Card 1: Basic
+	fAuthUsernameField = new BTextControl("authUsername", "Username", "", nullptr);
+	fAuthPasswordField = new BTextControl("authPassword", "Password", "", nullptr);
+	fAuthPasswordField->TextView()->HideTyping(true);
+	BView* authBasicCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+							   .Add(fAuthUsernameField)
+							   .Add(fAuthPasswordField)
+							   .AddGlue()
+							   .View();
+
+	// Card 2: Bearer token
+	fAuthTokenField = new BTextControl("authToken", "Token", "", nullptr);
+	BView* authBearerCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+								.Add(fAuthTokenField)
+								.AddGlue()
+								.View();
+
+	// Card 3: API key
+	fAuthApiKeyNameField = new BTextControl("authApiKeyName", "Header name", "", nullptr);
+	fAuthApiKeyValueField = new BTextControl("authApiKeyValue", "Value", "", nullptr);
+	BView* authApiKeyCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+								.Add(fAuthApiKeyNameField)
+								.Add(fAuthApiKeyValueField)
+								.AddGlue()
+								.View();
+
+	// Card container
+	BView* authCardsView = new BView("authCards", 0);
+	fAuthCardLayout = new BCardLayout();
+	authCardsView->SetLayout(fAuthCardLayout);
+	fAuthCardLayout->AddView(authNoneCard);
+	fAuthCardLayout->AddView(authBasicCard);
+	fAuthCardLayout->AddView(authBearerCard);
+	fAuthCardLayout->AddView(authApiKeyCard);
+	fAuthCardLayout->SetVisibleItem((int32)0);
+
+	BView* authPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+						   .SetInsets(B_USE_WINDOW_INSETS)
+						   .Add(authTypeRow)
+						   .Add(authCardsView)
+						   .View();
 
 	// Status label
 	fStatusLabel = new BStringView("status", "(no response yet)");
@@ -427,11 +583,6 @@ MainWindow::_BuildLayout()
 								 .End()
 							 .View();
 
-	BTextView* authTextView = new BTextView("authView");
-	BView* authPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-							.Add(authTextView)
-							.View();
-
 	fBodyTabView = new PreviewTabView("bodyTabs");
 	fBodyTabView->AddTab(fRequestBodyScroll);
 	fBodyTabView->TabAt(0)->SetLabel("Raw");
@@ -439,6 +590,11 @@ MainWindow::_BuildLayout()
 	fBodyTabView->TabAt(1)->SetLabel("Form");
 	fBodyTabView->AddTab(authPanel);
 	fBodyTabView->TabAt(2)->SetLabel("Authorization");
+
+	fAuthNoneRadio->SetTarget(this);
+	fAuthBasicRadio->SetTarget(this);
+	fAuthBearerRadio->SetTarget(this);
+	fAuthApiKeyRadio->SetTarget(this);
 
 	// Response headers
 	fResponseHeadersList = new BColumnListView("responseHeaders",
@@ -606,7 +762,13 @@ MainWindow::_SendRequest()
 		params.AddMessage("param", &param);
 	}
 
-	HistoryItem* item = new HistoryItem(method, url.UrlString(), fPendingRequestBody, params);
+	BHttpFields requestFields;
+	_ApplyAuth(requestFields);
+	if (requestFields.CountFields() > 0)
+		request.SetFields(requestFields);
+
+	HistoryItem* item = new HistoryItem(method, url.UrlString(), fPendingRequestBody, params,
+		_CurrentAuthType(), _CurrentAuthValues());
 	fHistoryPanel->AddItem(item, 0);  // newest on top
 	_UpdateHistoryButtons();
 
@@ -784,6 +946,33 @@ MainWindow::_LoadHistoryItem(HistoryItem* item)
 
         param.MakeEmpty();
     }
+
+	BString username, password, token, headerName, headerValue;
+	item->fAuthValues.FindString("username", &username);
+	item->fAuthValues.FindString("password", &password);
+	item->fAuthValues.FindString("token", &token);
+	item->fAuthValues.FindString("headerName", &headerName);
+	item->fAuthValues.FindString("headerValue", &headerValue);
+
+	fAuthUsernameField->SetText(username.String());
+	fAuthPasswordField->SetText(password.String());
+	fAuthTokenField->SetText(token.String());
+	fAuthApiKeyNameField->SetText(headerName.String());
+	fAuthApiKeyValueField->SetText(headerValue.String());
+
+	if (item->fAuthType == "basic") {
+		fAuthBasicRadio->SetValue(B_CONTROL_ON);
+		fAuthCardLayout->SetVisibleItem((int32)1);
+	} else if (item->fAuthType == "bearer") {
+		fAuthBearerRadio->SetValue(B_CONTROL_ON);
+		fAuthCardLayout->SetVisibleItem((int32)2);
+	} else if (item->fAuthType == "apikey") {
+		fAuthApiKeyRadio->SetValue(B_CONTROL_ON);
+		fAuthCardLayout->SetVisibleItem((int32)3);
+	} else {
+		fAuthNoneRadio->SetValue(B_CONTROL_ON);
+		fAuthCardLayout->SetVisibleItem((int32)0);
+	}
 }
 
 
@@ -812,8 +1001,17 @@ MainWindow::_UpdatePreview()
     if (url.IsValid())
         preview << "Host: " << url.Host() << "\n";
 
-    if (fBodyTabView->Selection() == 1) {
-        // Form mode
+	BHttpFields previewFields;
+	_ApplyAuth(previewFields);
+	for (const BHttpFields::Field& field : previewFields) {
+		std::string_view name = field.Name();
+		std::string_view value = field.Value();
+		preview << BString(name.data(), name.size()) << ": " << BString(value.data(), value.size())
+				<< "\n";
+	}
+
+	if (fBodyTabView->Selection() == 1) {
+		// Form mode
         BString encoded;
         for (int32 i = 0; i < fParamsList->CountRows(); i++) {
             BRow* row = fParamsList->RowAt(i);
@@ -833,8 +1031,8 @@ MainWindow::_UpdatePreview()
         } else {
             preview << "\n";
         }
-    } else {
-        BString bodyText(fRequestBodyView->Text());
+	} else {
+		BString bodyText(fRequestBodyView->Text());
         if (bodyText.Length() > 0 && method != "GET" && method != "HEAD") {
             preview << "Content-Type: application/json\n";
             preview << "Content-Length: " << bodyText.Length() << "\n\n";
@@ -842,7 +1040,68 @@ MainWindow::_UpdatePreview()
         } else {
             preview << "\n";
         }
-    }
+	}
 
-    fPreviewPanel->SetText(preview.String());
+	fPreviewPanel->SetText(preview.String());
+}
+
+
+void
+MainWindow::_ApplyAuth(BHttpFields& fields)
+{
+	if (fAuthBasicRadio->Value() == B_CONTROL_ON) {
+		BString credentials;
+		credentials << fAuthUsernameField->Text() << ":" << fAuthPasswordField->Text();
+
+		BString header;
+		header << "Basic " << Base64Encode(credentials);
+		fields.AddField("Authorization", header.String());
+
+	} else if (fAuthBearerRadio->Value() == B_CONTROL_ON) {
+		BString token(fAuthTokenField->Text());
+		if (token.Length() > 0) {
+			BString header;
+			header << "Bearer " << token;
+			fields.AddField("Authorization", header.String());
+		}
+
+	} else if (fAuthApiKeyRadio->Value() == B_CONTROL_ON) {
+		BString name(fAuthApiKeyNameField->Text());
+		BString value(fAuthApiKeyValueField->Text());
+		if (name.Length() > 0)
+			fields.AddField(name.String(), value.String());
+	}
+}
+
+
+BString
+MainWindow::_CurrentAuthType() const
+{
+	if (fAuthBasicRadio->Value() == B_CONTROL_ON)
+		return "basic";
+	if (fAuthBearerRadio->Value() == B_CONTROL_ON)
+		return "bearer";
+	if (fAuthApiKeyRadio->Value() == B_CONTROL_ON)
+		return "apikey";
+	return "none";
+}
+
+
+BMessage
+MainWindow::_CurrentAuthValues() const
+{
+	BMessage values;
+	BString type = _CurrentAuthType();
+
+	if (type == "basic") {
+		values.AddString("username", fAuthUsernameField->Text());
+		values.AddString("password", fAuthPasswordField->Text());
+	} else if (type == "bearer") {
+		values.AddString("token", fAuthTokenField->Text());
+	} else if (type == "apikey") {
+		values.AddString("headerName", fAuthApiKeyNameField->Text());
+		values.AddString("headerValue", fAuthApiKeyValueField->Text());
+	}
+
+	return values;
 }

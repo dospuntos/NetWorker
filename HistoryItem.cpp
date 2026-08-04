@@ -16,14 +16,17 @@ HistoryItem::_BuildLabel(const BString& method, const BString& url)
     return label;
 }
 
-HistoryItem::HistoryItem(const BString& method, const BString& url,
-    const BString& body, const BMessage& params)
-    :
-    BStringItem(_BuildLabel(method, url)),
-    fMethod(method),
-    fUrl(url),
-    fBody(body),
-    fParams(params)
+
+HistoryItem::HistoryItem(const BString& method, const BString& url, const BString& body,
+	const BMessage& params, const BString& authType, const BMessage& authValues)
+	:
+	BStringItem(_BuildLabel(method, url)),
+	fMethod(method),
+	fUrl(url),
+	fBody(body),
+	fParams(params),
+	fAuthType(authType),
+	fAuthValues(authValues)
 {
 }
 
@@ -39,7 +42,14 @@ HistoryItem::HistoryItem(const BMessage& archive)
     if (archive.FindMessage("params", &params) == B_OK)
         fParams = params;
 
-    SetText(_BuildLabel(fMethod, fUrl));
+	if (archive.FindString("authType", &fAuthType) != B_OK)
+		fAuthType = "none";
+
+	BMessage authValues;
+	if (archive.FindMessage("authValues", &authValues) == B_OK)
+		fAuthValues = authValues;
+
+	SetText(_BuildLabel(fMethod, fUrl));
 }
 
 status_t
@@ -49,6 +59,7 @@ HistoryItem::Archive(BMessage& archive) const
     archive.AddString("url", fUrl);
     archive.AddString("body", fBody);
     archive.AddMessage("params", &fParams);
-    return B_OK;
+	archive.AddString("authType", fAuthType);
+	archive.AddMessage("authValues", &fAuthValues);
+	return B_OK;
 }
-
