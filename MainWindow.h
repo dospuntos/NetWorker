@@ -20,9 +20,9 @@
 #include <TextView.h>
 #include <Window.h>
 
-using BPrivate::Network::BHttpSession;
-using BPrivate::Network::BHttpResult;
 using BPrivate::Network::BHttpFields;
+using BPrivate::Network::BHttpResult;
+using BPrivate::Network::BHttpSession;
 
 class BCardLayout;
 class BMenuField;
@@ -43,10 +43,16 @@ public:
     virtual bool        QuitRequested();
 
 private:
-			BMenuBar*	_BuildMenu();
-            void        _BuildLayout();
-            void        _SendRequest();
-            void        _ClearResponse();
+	BMenuBar*			_BuildMenu();
+	void        		_BuildLayout();
+	BView* 				_BuildRequestPanel();
+	BView* 				_BuildAuthPanel();
+	BView* 				_BuildParamsPanel();
+	BView* 				_BuildPreviewPanel();
+	BView* 				_BuildResponsePanel();
+	BView* 				_BuildHistoryPanel();
+	void        		_SendRequest();
+	void        		_ClearResponse();
 
 	BMenuBar*			fMenuBar;
     BPopUpMenu*         fMethodMenu;
@@ -78,20 +84,19 @@ private:
 	BButton*          	fParamAddButton;
 	BButton*          	fParamRemoveButton;
 
-	BRadioButton*   fAuthNoneRadio;
-	BRadioButton*   fAuthBasicRadio;
-	BRadioButton*   fAuthBearerRadio;
-	BRadioButton*   fAuthApiKeyRadio;
+	BRadioButton*   	fAuthNoneRadio;
+	BRadioButton*   	fAuthBasicRadio;
+	BRadioButton*   	fAuthBearerRadio;
+	BRadioButton*   	fAuthApiKeyRadio;
 
-	BCardLayout*    fAuthCardLayout;
+	BCardLayout*    	fAuthCardLayout;
 
-	BTextControl*   fAuthUsernameField;
-	BTextControl*   fAuthPasswordField;
-	BTextControl*   fAuthTokenField;
-	BTextControl*   fAuthApiKeyNameField;
-	BTextControl*   fAuthApiKeyValueField;
+	BTextControl*   	fAuthUsernameField;
+	BTextControl*   	fAuthPasswordField;
+	BTextControl*   	fAuthTokenField;
+	BTextControl*   	fAuthApiKeyNameField;
+	BTextControl*   	fAuthApiKeyValueField;
 
-	static BString _UrlEncode(const BString& value);
 	status_t _SaveSettings();
 	status_t	_LoadSettings(BMessage& settings);
 	void _RestoreValues(BMessage& settings);

@@ -8,7 +8,6 @@
 #include "IconMenuItem.h"
 
 #include <RadioButton.h>
-#include <cctype>
 
 #include <Alert.h>
 #include <Application.h>
@@ -47,17 +46,8 @@ using BPrivate::Network::BHttpSession;
 #undef B_TRANSLATION_CONTEXT
 #define B_TRANSLATION_CONTEXT "MainView"
 
-static const char* kMethods[] = {
-    "GET",
-    "HEAD",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "OPTIONS",
-    "QUERY",
-    nullptr
-};
+static const char* kMethods[]
+	= {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "QUERY", nullptr};
 
 namespace {
 
@@ -138,7 +128,6 @@ MainWindow::MainWindow()
 	BMessage settings;
 	_LoadSettings(settings);
 	_RestoreValues(settings);
-
 }
 
 
@@ -161,14 +150,14 @@ MainWindow::MessageReceived(BMessage* message)
 
 		case M_SEND_REQUEST:
 			if (fCurrentResult.has_value()) {
-			fSession.Cancel(fCurrentResult.value());
-			fCurrentResult.reset();
-			fSendButton->SetLabel("Send");
-			fStatusLabel->SetText("Cancelled");
+				fSession.Cancel(fCurrentResult.value());
+				fCurrentResult.reset();
+				fSendButton->SetLabel("Send");
+				fStatusLabel->SetText("Cancelled");
+				break;
+			}
+			_SendRequest();
 			break;
-		}
-		_SendRequest();
-		break;
 
 		case M_CLEAR_RESPONSE:
 			_ClearResponse();
@@ -256,6 +245,8 @@ MainWindow::MessageReceived(BMessage* message)
 
 			fParamKeyField->SetText("");
 			fParamValueField->SetText("");
+
+			_UpdatePreview();
 			break;
 		}
 
@@ -264,6 +255,8 @@ MainWindow::MessageReceived(BMessage* message)
 			BRow* selected = fParamsList->CurrentSelection();
 			if (selected != nullptr)
 				fParamsList->RemoveRow(selected);
+
+			_UpdatePreview();
 			break;
 		}
 
@@ -276,6 +269,8 @@ MainWindow::MessageReceived(BMessage* message)
 				fParamKeyField->SetText(keyField->String());
 				fParamValueField->SetText(valField->String());
 			}
+
+			_UpdatePreview();
 			break;
 		}
 
@@ -349,8 +344,8 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_CLEAR_HISTORY:
 		{
 			BAlert* alert = new BAlert("Clear history",
-				"Remove all items from the request history? This cannot be undone.",
-				"Clear", nullptr, "Cancel", B_WIDTH_FROM_WIDEST, B_OFFSET_SPACING, B_WARNING_ALERT);
+				"Remove all items from the request history? This cannot be undone.", "Clear",
+				nullptr, "Cancel", B_WIDTH_FROM_WIDEST, B_OFFSET_SPACING, B_WARNING_ALERT);
 
 			alert->SetShortcut(2, B_ESCAPE);
 			if (alert->Go() == 0) {
@@ -364,8 +359,9 @@ MainWindow::MessageReceived(BMessage* message)
 
 		case M_NOT_IMPLEMENTED:
 		{
-			BAlert* alert = new BAlert("Coming Soon", "This feature is planned but has not been implemented yet.",
-				"OK", nullptr, nullptr, B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_INFO_ALERT);
+			BAlert* alert = new BAlert("Coming Soon",
+				"This feature is planned but has not been implemented yet.", "OK", nullptr, nullptr,
+				B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_INFO_ALERT);
 			alert->SetShortcut(0, B_ESCAPE);
 			alert->Go();
 			break;
@@ -436,8 +432,7 @@ MainWindow::_BuildMenu()
 	// File menu
 	menu = new BMenu(B_TRANSLATE("File"));
 
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_CLEAR_RESPONSE)));
+	menu->AddItem(new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_CLEAR_RESPONSE), 'N'));
 	menu->AddSeparatorItem();
 	menu->AddItem(
 		new BMenuItem(B_TRANSLATE("Import" B_UTF8_ELLIPSIS), new BMessage(M_NOT_IMPLEMENTED)));
@@ -452,7 +447,7 @@ MainWindow::_BuildMenu()
 	menu = new BMenu(B_TRANSLATE("View"));
 
 	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Request preview"), new BMessage(M_TOGGLE_PREVIEW)));
+		new BMenuItem(B_TRANSLATE("Request preview"), new BMessage(M_TOGGLE_PREVIEW), 'P'));
 
 	menuBar->AddItem(menu);
 
@@ -460,39 +455,20 @@ MainWindow::_BuildMenu()
 }
 
 
-void
-MainWindow::_BuildLayout()
+BView*
+MainWindow::_BuildAuthPanel()
 {
-	// Method menu
-	fMethodMenu = new BPopUpMenu("GET");
-	for (int i = 0; kMethods[i] != nullptr; ++i)
-		fMethodMenu->AddItem(new BMenuItem(kMethods[i], new BMessage(M_UPDATE_PREVIEW)));
-	fMethodMenu->ItemAt(0)->SetMarked(true);
-
-	fMethodField = new BMenuField("method", nullptr, fMethodMenu);
-	fMethodField->SetExplicitMinSize(BSize(120, B_SIZE_UNSET));
-	fMethodField->SetExplicitMaxSize(BSize(120, B_SIZE_UNSET));
-
-	// URL bar
-	fUrlField = new BTextControl("url", nullptr, "", nullptr);
-	fUrlField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
-
-	// Send button
-	fSendButton = new BButton("send", "Send", new BMessage(M_SEND_REQUEST));
-	fSendButton->MakeDefault(true);
-
-	// Request body
-	fRequestBodyView = new PreviewTextView("requestBody");
-	fRequestBodyScroll = new BScrollView("requestBodyScroll", fRequestBodyView,
-		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
-
-	// Auth type radio buttons
 	fAuthNoneRadio = new BRadioButton("authNone", "None", new BMessage(M_AUTH_TYPE_CHANGED));
 	fAuthBasicRadio = new BRadioButton("authBasic", "Basic", new BMessage(M_AUTH_TYPE_CHANGED));
 	fAuthBearerRadio
 		= new BRadioButton("authBearer", "Bearer token", new BMessage(M_AUTH_TYPE_CHANGED));
 	fAuthApiKeyRadio = new BRadioButton("authApiKey", "API key", new BMessage(M_AUTH_TYPE_CHANGED));
 	fAuthNoneRadio->SetValue(B_CONTROL_ON);
+
+	fAuthNoneRadio->SetTarget(this);
+	fAuthBasicRadio->SetTarget(this);
+	fAuthBearerRadio->SetTarget(this);
+	fAuthApiKeyRadio->SetTarget(this);
 
 	BView* authTypeRow = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
 							 .Add(fAuthNoneRadio)
@@ -531,7 +507,6 @@ MainWindow::_BuildLayout()
 								.AddGlue()
 								.View();
 
-	// Card container
 	BView* authCardsView = new BView("authCards", 0);
 	fAuthCardLayout = new BCardLayout();
 	authCardsView->SetLayout(fAuthCardLayout);
@@ -541,18 +516,17 @@ MainWindow::_BuildLayout()
 	fAuthCardLayout->AddView(authApiKeyCard);
 	fAuthCardLayout->SetVisibleItem((int32)0);
 
-	BView* authPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-						   .SetInsets(B_USE_WINDOW_INSETS)
-						   .Add(authTypeRow)
-						   .Add(authCardsView)
-						   .View();
+	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.SetInsets(B_USE_WINDOW_INSETS)
+		.Add(authTypeRow)
+		.Add(authCardsView)
+		.View();
+}
 
-	// Status label
-	fStatusLabel = new BStringView("status", "(no response yet)");
 
-	BButton* clearButton = new BButton("clear", "Clear", new BMessage(M_CLEAR_RESPONSE));
-
-	// Params tab
+BView*
+MainWindow::_BuildParamsPanel()
+{
 	fParamsList = new BColumnListView("paramsList", B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE,
 		B_FANCY_BORDER);
 	fParamsList->AddColumn(new BStringColumn("Key", 180, 80, 400, 0), 0);
@@ -565,7 +539,60 @@ MainWindow::_BuildLayout()
 	fParamAddButton = new BButton("paramAdd", "Add", new BMessage(M_ADD_PARAMETER));
 	fParamRemoveButton = new BButton("paramRemove", "Remove", new BMessage(M_REMOVE_PARAMETER));
 
-	// Top bar: method + URL + send
+	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.Add(fParamsList)
+		.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+			.Add(fParamKeyField)
+			.Add(fParamValueField)
+			.Add(fParamAddButton)
+			.Add(fParamRemoveButton)
+			.End()
+		.View();
+}
+
+
+BView*
+MainWindow::_BuildPreviewPanel()
+{
+	fPreviewPanel = new BTextView("previewPanel");
+	fPreviewPanel->MakeEditable(false);
+
+	BStringView* previewLabel = new BStringView("previewLabel", "Request preview");
+	previewLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+
+	fPreviewPanelScroll = new BScrollView("previewScroll", fPreviewPanel,
+		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
+
+	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.SetInsets(B_USE_WINDOW_INSETS)
+		.Add(previewLabel)
+		.Add(fPreviewPanelScroll)
+		.View();
+}
+
+
+BView*
+MainWindow::_BuildRequestPanel()
+{
+	// Method menu
+	fMethodMenu = new BPopUpMenu("GET");
+	for (int i = 0; kMethods[i] != nullptr; ++i)
+		fMethodMenu->AddItem(new BMenuItem(kMethods[i], new BMessage(M_UPDATE_PREVIEW)));
+	fMethodMenu->ItemAt(0)->SetMarked(true);
+
+	fMethodField = new BMenuField("method", nullptr, fMethodMenu);
+	fMethodField->SetExplicitMinSize(BSize(120, B_SIZE_UNSET));
+	fMethodField->SetExplicitMaxSize(BSize(120, B_SIZE_UNSET));
+
+	// URL bar
+	fUrlField = new BTextControl("url", nullptr, "", nullptr);
+	fUrlField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
+	fUrlField->SetText("https://httpbin.org/get");
+
+	// Send button
+	fSendButton = new BButton("send", "Send", new BMessage(M_SEND_REQUEST));
+	fSendButton->MakeDefault(true);
+
 	BView* requestTopBar = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
 							   .SetInsets(B_USE_WINDOW_INSETS)
 							   .Add(fMethodField)
@@ -573,16 +600,13 @@ MainWindow::_BuildLayout()
 							   .Add(fSendButton)
 							   .View();
 
+	// Request body (Raw tab)
+	fRequestBodyView = new PreviewTextView("requestBody");
+	fRequestBodyScroll = new BScrollView("requestBodyScroll", fRequestBodyView,
+		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 
-	BView* paramsPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-							 .Add(fParamsList)
-							 .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
-								 .Add(fParamKeyField)
-								 .Add(fParamValueField)
-								 .Add(fParamAddButton)
-								 .Add(fParamRemoveButton)
-								 .End()
-							 .View();
+	BView* paramsPanel = _BuildParamsPanel();
+	BView* authPanel = _BuildAuthPanel();
 
 	fBodyTabView = new PreviewTabView("bodyTabs");
 	fBodyTabView->AddTab(fRequestBodyScroll);
@@ -592,60 +616,64 @@ MainWindow::_BuildLayout()
 	fBodyTabView->AddTab(authPanel);
 	fBodyTabView->TabAt(2)->SetLabel("Authorization");
 
-	fAuthNoneRadio->SetTarget(this);
-	fAuthBasicRadio->SetTarget(this);
-	fAuthBearerRadio->SetTarget(this);
-	fAuthApiKeyRadio->SetTarget(this);
+	BView* bodyPanel = BLayoutBuilder::Group<>(B_VERTICAL)
+						   .SetInsets(B_USE_WINDOW_INSETS)
+						   .Add(fBodyTabView)
+						   .View();
 
-	// Response headers
+	BView* previewPanel = _BuildPreviewPanel();
+
+	fRequestAreaSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
+	fRequestAreaSplit->AddChild(bodyPanel, 0.7f);
+	fRequestAreaSplit->AddChild(previewPanel, 0.3f);
+	fRequestAreaSplit->SetItemCollapsed(1, true);
+
+	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.Add(requestTopBar)
+		.Add(fRequestAreaSplit)
+		.View();
+}
+
+
+BView*
+MainWindow::_BuildResponsePanel()
+{
+	fStatusLabel = new BStringView("status", "(no response yet)");
+	BButton* clearButton = new BButton("clear", "Clear", new BMessage(M_CLEAR_RESPONSE));
+
 	fResponseHeadersList = new BColumnListView("responseHeaders",
 		B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE, B_FANCY_BORDER);
 	fResponseHeadersList->AddColumn(new BStringColumn("Header", 180, 80, 400, 0), 0);
 	fResponseHeadersList->AddColumn(new BStringColumn("Value", 500, 100, 2000, 0), 1);
-	fResponseHeadersList->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 140));
+	fResponseHeadersList->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
 
-	// Response body
 	fResponseBodyView = new BTextView("responseBody");
 	fResponseBodyView->MakeEditable(false);
 	fResponseBodyScroll = new BScrollView("responseBodyScroll", fResponseBodyView,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
-
-	// Response tabs
-	fResponseHeadersList->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
 	fResponseBodyScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
+
 	fResponseTabView = new BTabView("responseTabs");
 	fResponseTabView->AddTab(fResponseHeadersList);
 	fResponseTabView->TabAt(0)->SetLabel("Headers");
 	fResponseTabView->AddTab(fResponseBodyScroll);
 	fResponseTabView->TabAt(1)->SetLabel("Body");
 
-	// Response panel
-	BView* responsePanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-							   .SetInsets(B_USE_WINDOW_INSETS)
-							   .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
-								   .Add(fStatusLabel)
-								   .AddGlue()
-								   .Add(clearButton)
-								   .End()
-							   .Add(fResponseTabView)
-							   .View();
+	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.SetInsets(B_USE_WINDOW_INSETS)
+		.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+			.Add(fStatusLabel)
+			.AddGlue()
+			.Add(clearButton)
+			.End()
+		.Add(fResponseTabView)
+		.View();
+}
 
-	// Preview panel
-	fPreviewPanel = new BTextView("previewPanel");
-	fPreviewPanel->MakeEditable(false);
 
-	BStringView* previewLabel = new BStringView("previewLabel", "Request preview");
-	previewLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
-
-	fPreviewPanelScroll = new BScrollView("previewScroll", fPreviewPanel,
-		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
-	BView* previewPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-							  .SetInsets(B_USE_WINDOW_INSETS)
-							  .Add(previewLabel)
-							  .Add(fPreviewPanelScroll)
-							  .View();
-
-	// History panel
+BView*
+MainWindow::_BuildHistoryPanel()
+{
 	fHistoryPanel = new BListView("historyPanel", B_MULTIPLE_SELECTION_LIST);
 	fHistoryPanel->SetInvocationMessage(new BMessage(M_SELECT_HISTORY));
 	fHistoryPanel->SetSelectionMessage(new BMessage(M_HISTORY_SELECTION_CHANGED));
@@ -659,35 +687,27 @@ MainWindow::_BuildLayout()
 	fClearHistoryBtn = new BButton("clear", "Clear history", new BMessage(M_CLEAR_HISTORY));
 	fClearHistoryBtn->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 
-	fRemoveItemBtn = new BButton("deleteItem", "Delete selected", new BMessage(M_DELETE_HISTORY_ITEM));
+	fRemoveItemBtn
+		= new BButton("deleteItem", "Delete selected", new BMessage(M_DELETE_HISTORY_ITEM));
 	fRemoveItemBtn->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 	fRemoveItemBtn->SetEnabled(false);
 
-	BView* historyPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-							  .SetInsets(B_USE_WINDOW_INSETS)
-							  .Add(historyLabel)
-							  .Add(historyScroll)
-							  .Add(fRemoveItemBtn)
-							  .Add(fClearHistoryBtn)
-							  .View();
-
-	BView* bodyPanel = BLayoutBuilder::Group<>(B_VERTICAL)
-							.SetInsets(B_USE_WINDOW_INSETS)
-							.Add(fBodyTabView)
-							.View();
+	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.SetInsets(B_USE_WINDOW_INSETS)
+		.Add(historyLabel)
+		.Add(historyScroll)
+		.Add(fRemoveItemBtn)
+		.Add(fClearHistoryBtn)
+		.View();
+}
 
 
-	// Body tabs and preview split beneath it
-	fRequestAreaSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
-	fRequestAreaSplit->AddChild(bodyPanel, 0.7f);
-	fRequestAreaSplit->AddChild(previewPanel, 0.3f);
-	fRequestAreaSplit->SetItemCollapsed(1, true);
-
-	BView* requestArea = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-							//.SetInsets(B_USE_WINDOW_INSETS)
-							 .Add(requestTopBar)
-							 .Add(fRequestAreaSplit)
-							 .View();
+void
+MainWindow::_BuildLayout()
+{
+	BView* requestArea = _BuildRequestPanel();
+	BView* responsePanel = _BuildResponsePanel();
+	BView* historyPanel = _BuildHistoryPanel();
 
 	fSplitView = new BSplitView(B_VERTICAL, B_USE_SMALL_SPACING);
 	fSplitView->AddChild(requestArea, 0.5f);
@@ -732,8 +752,10 @@ MainWindow::_SendRequest()
 
 			if (i > 0)
 				fPendingRequestBody << "&";
-			fPendingRequestBody << _UrlEncode(keyField->String()) << "="
-								<< _UrlEncode(valField->String());
+
+			BString key = keyField->String();
+			BString value = valField->String();
+			fPendingRequestBody << BUrl::UrlEncode(key) << "=" << BUrl::UrlEncode(value);
 		}
 
 		if (fPendingRequestBody.Length() > 0 && method != "GET" && method != "HEAD") {
@@ -770,7 +792,7 @@ MainWindow::_SendRequest()
 
 	HistoryItem* item = new HistoryItem(method, url.UrlString(), fPendingRequestBody, params,
 		_CurrentAuthType(), _CurrentAuthValues());
-	fHistoryPanel->AddItem(item, 0);  // newest on top
+	fHistoryPanel->AddItem(item, 0); // newest on top
 	_UpdateHistoryButtons();
 
 	// Send request
@@ -791,30 +813,6 @@ MainWindow::_ClearResponse()
 	fResponseBodyView->SetText("");
 	if (fCurrentResult.has_value())
 		fSession.Cancel(fCurrentResult.value());
-}
-
-
-BString
-MainWindow::_UrlEncode(const BString& value)
-{
-	BString result;
-	const char* str = value.String();
-
-	for (int32 i = 0; str[i] != '\0'; ++i) {
-		unsigned char c = str[i];
-
-		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-			result << (char)c;
-		} else if (c == ' ') {
-			result << '+';
-		} else {
-			char buf[4];
-			snprintf(buf, sizeof(buf), "%%%02X", c);
-			result << buf;
-		}
-	}
-
-	return result;
 }
 
 
@@ -874,7 +872,7 @@ MainWindow::_SaveSettings()
 	settings.AddString("urlField", fUrlField->Text());
 
 	BMenuItem* marked = fMethodMenu->FindMarked();
-	settings.AddString("method", (marked ? marked->Label() : "GET"));
+	settings.AddString("method", marked ? marked->Label() : "GET");
 
 	// save history
 	for (int32 i = 0; i < fHistoryPanel->CountItems(); ++i) {
@@ -906,8 +904,6 @@ MainWindow::_RestoreValues(BMessage& settings)
 	// Restore values
 	if (settings.FindString("urlField", &text) == B_OK)
 		fUrlField->SetText(text.String());
-	else
-		fUrlField->SetText("https://httpbin.org/get");
 
 	if (settings.FindString("method", &text) == B_OK) {
 		for (int32 i = 0; i < fMethodMenu->CountItems(); ++i) {
@@ -922,11 +918,11 @@ MainWindow::_RestoreValues(BMessage& settings)
 	// Restore history
 	fHistoryPanel->MakeEmpty(); // just in case
 
-    BMessage itemArchive;
-    for (int32 i = 0; settings.FindMessage("historyItem", i, &itemArchive) == B_OK; ++i) {
-        fHistoryPanel->AddItem(new HistoryItem(itemArchive));
-        itemArchive.MakeEmpty();
-    }
+	BMessage itemArchive;
+	for (int32 i = 0; settings.FindMessage("historyItem", i, &itemArchive) == B_OK; ++i) {
+		fHistoryPanel->AddItem(new HistoryItem(itemArchive));
+		itemArchive.MakeEmpty();
+	}
 	_UpdateHistoryButtons();
 }
 
@@ -934,31 +930,31 @@ MainWindow::_RestoreValues(BMessage& settings)
 void
 MainWindow::_LoadHistoryItem(HistoryItem* item)
 {
-    fUrlField->SetText(item->fUrl.String());
-    fRequestBodyView->SetText(item->fBody.String());
+	fUrlField->SetText(item->fUrl.String());
+	fRequestBodyView->SetText(item->fBody.String());
 
-    for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
-        BMenuItem* mi = fMethodMenu->ItemAt(i);
-        if (item->fMethod == mi->Label()) {
-            mi->SetMarked(true);
-            break;
-        }
-    }
+	for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
+		BMenuItem* mi = fMethodMenu->ItemAt(i);
+		if (item->fMethod == mi->Label()) {
+			mi->SetMarked(true);
+			break;
+		}
+	}
 
-    fParamsList->Clear();
-    BMessage param;
-    for (int32 i = 0; item->fParams.FindMessage("param", i, &param) == B_OK; i++) {
-        BString key, value;
-        param.FindString("key", &key);
-        param.FindString("value", &value);
+	fParamsList->Clear();
+	BMessage param;
+	for (int32 i = 0; item->fParams.FindMessage("param", i, &param) == B_OK; i++) {
+		BString key, value;
+		param.FindString("key", &key);
+		param.FindString("value", &value);
 
-        BRow* row = new BRow();
-        row->SetField(new BStringField(key.String()), 0);
-        row->SetField(new BStringField(value.String()), 1);
-        fParamsList->AddRow(row);
+		BRow* row = new BRow();
+		row->SetField(new BStringField(key.String()), 0);
+		row->SetField(new BStringField(value.String()), 1);
+		fParamsList->AddRow(row);
 
-        param.MakeEmpty();
-    }
+		param.MakeEmpty();
+	}
 
 	BString username, password, token, headerName, headerValue;
 	item->fAuthValues.FindString("username", &username);
@@ -992,27 +988,27 @@ MainWindow::_LoadHistoryItem(HistoryItem* item)
 void
 MainWindow::_UpdateHistoryButtons()
 {
-    bool hasItems = fHistoryPanel->CountItems() > 0;
-    fClearHistoryBtn->SetEnabled(hasItems);
+	bool hasItems = fHistoryPanel->CountItems() > 0;
+	fClearHistoryBtn->SetEnabled(hasItems);
 
-    bool hasSelection = fHistoryPanel->CurrentSelection() >= 0;
-    fRemoveItemBtn->SetEnabled(hasSelection);
+	bool hasSelection = fHistoryPanel->CurrentSelection() >= 0;
+	fRemoveItemBtn->SetEnabled(hasSelection);
 }
 
 
 void
 MainWindow::_UpdatePreview()
 {
-    BMenuItem* marked = fMethodMenu->FindMarked();
-    BString method(marked ? marked->Label() : "GET");
-    BString urlText(fUrlField->Text());
+	BMenuItem* marked = fMethodMenu->FindMarked();
+	BString method(marked ? marked->Label() : "GET");
+	BString urlText(fUrlField->Text());
 
-    BUrl url(urlText, false);
+	BUrl url(urlText, false);
 
-    BString preview;
-    preview << method << " " << urlText << " HTTP/1.1\n";
-    if (url.IsValid())
-        preview << "Host: " << url.Host() << "\n";
+	BString preview;
+	preview << method << " " << urlText << " HTTP/1.1\n";
+	if (url.IsValid())
+		preview << "Host: " << url.Host() << "\n";
 
 	BHttpFields previewFields;
 	_ApplyAuth(previewFields);
@@ -1025,34 +1021,36 @@ MainWindow::_UpdatePreview()
 
 	if (fBodyTabView->Selection() == 1) {
 		// Form mode
-        BString encoded;
-        for (int32 i = 0; i < fParamsList->CountRows(); i++) {
-            BRow* row = fParamsList->RowAt(i);
-            auto* keyField = static_cast<BStringField*>(row->GetField(0));
-            auto* valField = static_cast<BStringField*>(row->GetField(1));
+		BString encoded;
+		for (int32 i = 0; i < fParamsList->CountRows(); i++) {
+			BRow* row = fParamsList->RowAt(i);
+			auto* keyField = static_cast<BStringField*>(row->GetField(0));
+			auto* valField = static_cast<BStringField*>(row->GetField(1));
 
-            if (i > 0)
-                encoded << "&";
-            encoded << _UrlEncode(keyField->String())
-                    << "=" << _UrlEncode(valField->String());
-        }
+			if (i > 0)
+				encoded << "&";
 
-        if (encoded.Length() > 0 && method != "GET" && method != "HEAD") {
-            preview << "Content-Type: application/x-www-form-urlencoded\n";
-            preview << "Content-Length: " << encoded.Length() << "\n\n";
-            preview << encoded;
-        } else {
-            preview << "\n";
-        }
+			BString key = keyField->String();
+			BString value = valField->String();
+			encoded << BUrl::UrlEncode(key) << "=" << BUrl::UrlEncode(value);
+		}
+
+		if (encoded.Length() > 0 && method != "GET" && method != "HEAD") {
+			preview << "Content-Type: application/x-www-form-urlencoded\n";
+			preview << "Content-Length: " << encoded.Length() << "\n\n";
+			preview << encoded;
+		} else {
+			preview << "\n";
+		}
 	} else {
 		BString bodyText(fRequestBodyView->Text());
-        if (bodyText.Length() > 0 && method != "GET" && method != "HEAD") {
-            preview << "Content-Type: application/json\n";
-            preview << "Content-Length: " << bodyText.Length() << "\n\n";
-            preview << bodyText;
-        } else {
-            preview << "\n";
-        }
+		if (bodyText.Length() > 0 && method != "GET" && method != "HEAD") {
+			preview << "Content-Type: application/json\n";
+			preview << "Content-Length: " << bodyText.Length() << "\n\n";
+			preview << bodyText;
+		} else {
+			preview << "\n";
+		}
 	}
 
 	fPreviewPanel->SetText(preview.String());
