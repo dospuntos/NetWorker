@@ -5,15 +5,34 @@
 
 #include "HistoryItem.h"
 
-#undef B_TRANSLATION_CONTEXT
-#define B_TRANSLATION_CONTEXT "MainView"
+#include <DataIO.h>
+#include <cstring>
+
+namespace {
+
+
+bool
+MessagesEqual(const BMessage& a, const BMessage& b)
+{
+	BMallocIO bufA, bufB;
+	if (a.Flatten(&bufA) != B_OK || b.Flatten(&bufB) != B_OK)
+		return false;
+
+	if (bufA.BufferLength() != bufB.BufferLength())
+		return false;
+
+	return memcmp(bufA.Buffer(), bufB.Buffer(), bufA.BufferLength()) == 0;
+}
+
+} // namespace
+
 
 BString
 HistoryItem::_BuildLabel(const BString& method, const BString& url)
 {
-    BString label;
-    label << method << " " << url;
-    return label;
+	BString label;
+	label << method << " " << url;
+	return label;
 }
 
 
@@ -30,17 +49,18 @@ HistoryItem::HistoryItem(const BString& method, const BString& url, const BStrin
 {
 }
 
-HistoryItem::HistoryItem(const BMessage& archive)
-    :
-    BStringItem("")
-{
-    archive.FindString("method", &fMethod);
-    archive.FindString("url", &fUrl);
-    archive.FindString("body", &fBody);
 
-    BMessage params;
-    if (archive.FindMessage("params", &params) == B_OK)
-        fParams = params;
+HistoryItem::HistoryItem(const BMessage& archive)
+	:
+	BStringItem("")
+{
+	archive.FindString("method", &fMethod);
+	archive.FindString("url", &fUrl);
+	archive.FindString("body", &fBody);
+
+	BMessage params;
+	if (archive.FindMessage("params", &params) == B_OK)
+		fParams = params;
 
 	if (archive.FindString("authType", &fAuthType) != B_OK)
 		fAuthType = "none";
@@ -52,14 +72,24 @@ HistoryItem::HistoryItem(const BMessage& archive)
 	SetText(_BuildLabel(fMethod, fUrl));
 }
 
+
 status_t
 HistoryItem::Archive(BMessage& archive) const
 {
-    archive.AddString("method", fMethod);
-    archive.AddString("url", fUrl);
-    archive.AddString("body", fBody);
-    archive.AddMessage("params", &fParams);
+	archive.AddString("method", fMethod);
+	archive.AddString("url", fUrl);
+	archive.AddString("body", fBody);
+	archive.AddMessage("params", &fParams);
 	archive.AddString("authType", fAuthType);
 	archive.AddMessage("authValues", &fAuthValues);
 	return B_OK;
+}
+
+
+bool
+HistoryItem::Equals(const HistoryItem& other) const
+{
+	return fMethod == other.fMethod && fUrl == other.fUrl && fBody == other.fBody
+		&& fAuthType == other.fAuthType && MessagesEqual(fParams, other.fParams)
+		&& MessagesEqual(fAuthValues, other.fAuthValues);
 }

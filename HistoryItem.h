@@ -7,10 +7,9 @@
 #define HISTORYITEM_H
 
 #include <Message.h>
-#include <SupportDefs.h>
 #include <String.h>
 #include <StringItem.h>
-
+#include <SupportDefs.h>
 
 class HistoryItem : public BStringItem {
 public:
@@ -20,6 +19,7 @@ public:
     explicit HistoryItem(const BMessage& archive);
 
     status_t Archive(BMessage& archive) const;
+	bool Equals(const HistoryItem& other) const;
 
     BString  fMethod;
     BString  fUrl;

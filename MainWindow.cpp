@@ -792,6 +792,17 @@ MainWindow::_SendRequest()
 
 	HistoryItem* item = new HistoryItem(method, url.UrlString(), fPendingRequestBody, params,
 		_CurrentAuthType(), _CurrentAuthValues());
+
+	// Check for duplicates
+	for (int32 i = 0; i < fHistoryPanel->CountItems(); i++) {
+		auto* existing = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(i));
+		if (existing->Equals(*item)) {
+			BListItem* removed = fHistoryPanel->RemoveItem(i);
+			delete removed;
+			break;
+		}
+	}
+
 	fHistoryPanel->AddItem(item, 0); // newest on top
 	_UpdateHistoryButtons();
 
