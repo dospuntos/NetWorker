@@ -6,6 +6,7 @@
 #include "MainWindow.h"
 #include "Constants.h"
 #include "IconMenuItem.h"
+#include "RenameWindow.h"
 
 #include <RadioButton.h>
 
@@ -14,6 +15,7 @@
 #include <Button.h>
 #include <CardLayout.h>
 #include <Catalog.h>
+#include <Clipboard.h>
 #include <DataIO.h>
 #include <Directory.h>
 #include <ErrorsExt.h>
@@ -111,6 +113,42 @@ Base64Encode(const BString& input)
 
 	return output;
 }
+
+class HistoryListView : public BListView {
+public:
+    HistoryListView(const char* name)
+        : BListView(name, B_MULTIPLE_SELECTION_LIST) {}
+
+    void MouseDown(BPoint where) override
+    {
+        BMessage* msg = Window()->CurrentMessage();
+        int32 buttons = msg->GetInt32("buttons", 0);
+
+        if (buttons & B_SECONDARY_MOUSE_BUTTON) {
+            int32 index = IndexOf(where);
+            if (index >= 0) {
+                if (!IsItemSelected(index)) {
+                    DeselectAll();
+                    Select(index);
+                }
+
+                BPopUpMenu* menu = new BPopUpMenu("historyContext", false, false);
+                menu->AddItem(new BMenuItem("Load", new BMessage(M_SELECT_HISTORY)));
+				menu->AddItem(new BMenuItem("Rename" B_UTF8_ELLIPSIS, new BMessage(M_SHOW_RENAME_DIALOG)));
+				menu->AddItem(new BMenuItem("Copy URL", new BMessage(M_COPY_HISTORY_URL)));
+				menu->AddSeparatorItem();
+                menu->AddItem(new BMenuItem("Delete", new BMessage(M_DELETE_HISTORY_ITEM)));
+                menu->SetTargetForItems(Window());
+
+                ConvertToScreen(&where);
+                menu->Go(where, true, true, true);
+            }
+            return;
+        }
+
+        BListView::MouseDown(where);
+    }
+};
 
 } // namespace
 
@@ -340,6 +378,64 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_HISTORY_SELECTION_CHANGED:
 			_UpdateHistoryButtons();
 			break;
+
+		case M_COPY_HISTORY_URL:
+		{
+			int32 index = fHistoryPanel->CurrentSelection();
+			if (index < 0)
+				break;
+
+			auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
+
+			if (be_clipboard->Lock()) {
+				be_clipboard->Clear();
+
+				BMessage* clip = be_clipboard->Data();
+				if (clip != nullptr) {
+					clip->AddData("text/plain", B_MIME_TYPE, item->fUrl.String(),
+						item->fUrl.Length());
+					be_clipboard->Commit();
+				}
+
+				be_clipboard->Unlock();
+			}
+			break;
+		}
+
+		case M_SHOW_RENAME_DIALOG:
+		{
+			int32 index = fHistoryPanel->CurrentSelection();
+			if (index < 0)
+				break;
+
+			auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
+
+			BRect frame(0, 0, 280, 60);
+			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
+
+			RenameWindow* win = new RenameWindow(frame, item->Text(), index, BMessenger(this),
+				M_RENAME_HISTORY_ITEM);
+			win->Show();
+			break;
+		}
+
+		case M_RENAME_HISTORY_ITEM:
+		{
+			int32 index;
+			BString label;
+			if (message->FindInt32("index", &index) != B_OK
+				|| message->FindString("label", &label) != B_OK) {
+				break;
+			}
+
+			if (index >= 0 && index < fHistoryPanel->CountItems()) {
+				auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
+				item->SetCustomLabel(label);
+				fHistoryPanel->InvalidateItem(index);
+				_SaveSettings();
+			}
+			break;
+		}
 
 		case M_CLEAR_HISTORY:
 		{
@@ -674,7 +770,7 @@ MainWindow::_BuildResponsePanel()
 BView*
 MainWindow::_BuildHistoryPanel()
 {
-	fHistoryPanel = new BListView("historyPanel", B_MULTIPLE_SELECTION_LIST);
+	fHistoryPanel = new HistoryListView("historyPanel");
 	fHistoryPanel->SetInvocationMessage(new BMessage(M_SELECT_HISTORY));
 	fHistoryPanel->SetSelectionMessage(new BMessage(M_HISTORY_SELECTION_CHANGED));
 
@@ -687,16 +783,10 @@ MainWindow::_BuildHistoryPanel()
 	fClearHistoryBtn = new BButton("clear", "Clear history", new BMessage(M_CLEAR_HISTORY));
 	fClearHistoryBtn->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 
-	fRemoveItemBtn
-		= new BButton("deleteItem", "Delete selected", new BMessage(M_DELETE_HISTORY_ITEM));
-	fRemoveItemBtn->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
-	fRemoveItemBtn->SetEnabled(false);
-
 	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 		.SetInsets(B_USE_WINDOW_INSETS)
 		.Add(historyLabel)
 		.Add(historyScroll)
-		.Add(fRemoveItemBtn)
 		.Add(fClearHistoryBtn)
 		.View();
 }
@@ -797,6 +887,7 @@ MainWindow::_SendRequest()
 	for (int32 i = 0; i < fHistoryPanel->CountItems(); i++) {
 		auto* existing = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(i));
 		if (existing->Equals(*item)) {
+			item->SetCustomLabel(existing->fCustomLabel);
 			BListItem* removed = fHistoryPanel->RemoveItem(i);
 			delete removed;
 			break;
@@ -1001,9 +1092,6 @@ MainWindow::_UpdateHistoryButtons()
 {
 	bool hasItems = fHistoryPanel->CountItems() > 0;
 	fClearHistoryBtn->SetEnabled(hasItems);
-
-	bool hasSelection = fHistoryPanel->CurrentSelection() >= 0;
-	fRemoveItemBtn->SetEnabled(hasSelection);
 }
 
 

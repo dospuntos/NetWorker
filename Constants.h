@@ -31,6 +31,9 @@ enum {
 	M_DELETE_HISTORY_ITEM = 'dhis',
 	M_CLEAR_HISTORY = 'clrh',
 	M_HISTORY_SELECTION_CHANGED = 'chis',
+	M_COPY_HISTORY_URL = 'cphu',
+	M_SHOW_RENAME_DIALOG = 'shrn',
+	M_RENAME_HISTORY_ITEM = 'rnhi',
 	M_UPDATE_PREVIEW = 'upvw'
 };
 

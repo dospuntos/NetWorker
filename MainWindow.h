@@ -74,7 +74,6 @@ private:
 	BString fPendingRequestBody;
 	BListView* 			fHistoryPanel;
 	BButton*			fClearHistoryBtn;
-	BButton*			fRemoveItemBtn;
 
 	BTabView*        	fBodyTabView;
 	BTabView*			fResponseTabView;

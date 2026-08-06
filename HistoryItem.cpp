@@ -57,6 +57,7 @@ HistoryItem::HistoryItem(const BMessage& archive)
 	archive.FindString("method", &fMethod);
 	archive.FindString("url", &fUrl);
 	archive.FindString("body", &fBody);
+	archive.FindString("customLabel", &fCustomLabel);
 
 	BMessage params;
 	if (archive.FindMessage("params", &params) == B_OK)
@@ -69,7 +70,7 @@ HistoryItem::HistoryItem(const BMessage& archive)
 	if (archive.FindMessage("authValues", &authValues) == B_OK)
 		fAuthValues = authValues;
 
-	SetText(_BuildLabel(fMethod, fUrl));
+	_RefreshText();
 }
 
 
@@ -82,6 +83,7 @@ HistoryItem::Archive(BMessage& archive) const
 	archive.AddMessage("params", &fParams);
 	archive.AddString("authType", fAuthType);
 	archive.AddMessage("authValues", &fAuthValues);
+	archive.AddString("customLabel", fCustomLabel);
 	return B_OK;
 }
 
@@ -92,4 +94,22 @@ HistoryItem::Equals(const HistoryItem& other) const
 	return fMethod == other.fMethod && fUrl == other.fUrl && fBody == other.fBody
 		&& fAuthType == other.fAuthType && MessagesEqual(fParams, other.fParams)
 		&& MessagesEqual(fAuthValues, other.fAuthValues);
+}
+
+
+void
+HistoryItem::_RefreshText()
+{
+	if (fCustomLabel.Length() > 0)
+		SetText(fCustomLabel.String());
+	else
+		SetText(_BuildLabel(fMethod, fUrl).String());
+}
+
+
+void
+HistoryItem::SetCustomLabel(const BString& label)
+{
+	fCustomLabel = label;
+	_RefreshText();
 }

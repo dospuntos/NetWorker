@@ -20,6 +20,7 @@ public:
 
     status_t Archive(BMessage& archive) const;
 	bool Equals(const HistoryItem& other) const;
+	void SetCustomLabel(const BString& label);
 
     BString  fMethod;
     BString  fUrl;
@@ -27,9 +28,11 @@ public:
     BMessage fParams;
     BString  fAuthType;
     BMessage fAuthValues;
+	BString fCustomLabel;
 
 private:
     static BString _BuildLabel(const BString& method, const BString& url);
+	void _RefreshText();
 };
 
 #endif // HISTORYITEM_H
