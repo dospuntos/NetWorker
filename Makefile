@@ -34,7 +34,8 @@ SRCS =  App.cpp \
 		HistoryItem.cpp \
 		Constants.cpp \
 		IconMenuItem.cpp \
-		RenameWindow.cpp
+		RenameWindow.cpp \
+		RequestData.cpp
 
 #	Specify the resource definition files to use. Full or relative paths can be
 #	used.

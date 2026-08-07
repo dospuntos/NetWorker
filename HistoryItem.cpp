@@ -5,105 +5,61 @@
 
 #include "HistoryItem.h"
 
-#include <DataIO.h>
-#include <cstring>
-
-namespace {
-
-
-bool
-MessagesEqual(const BMessage& a, const BMessage& b)
-{
-	BMallocIO bufA, bufB;
-	if (a.Flatten(&bufA) != B_OK || b.Flatten(&bufB) != B_OK)
-		return false;
-
-	if (bufA.BufferLength() != bufB.BufferLength())
-		return false;
-
-	return memcmp(bufA.Buffer(), bufB.Buffer(), bufA.BufferLength()) == 0;
-}
-
-} // namespace
-
-
 BString
 HistoryItem::_BuildLabel(const BString& method, const BString& url)
 {
-	BString label;
-	label << method << " " << url;
-	return label;
+    BString label;
+    label << method << " " << url;
+    return label;
 }
 
 
-HistoryItem::HistoryItem(const BString& method, const BString& url, const BString& body,
-	const BMessage& params, const BString& authType, const BMessage& authValues)
-	:
-	BStringItem(_BuildLabel(method, url)),
-	fMethod(method),
-	fUrl(url),
-	fBody(body),
-	fParams(params),
-	fAuthType(authType),
-	fAuthValues(authValues)
+HistoryItem::HistoryItem(const RequestData& data)
+    :
+    BStringItem(""),
+    fData(data)
 {
+    _RefreshText();
 }
 
 
 HistoryItem::HistoryItem(const BMessage& archive)
-	:
-	BStringItem("")
+    :
+    BStringItem("")
 {
-	archive.FindString("method", &fMethod);
-	archive.FindString("url", &fUrl);
-	archive.FindString("body", &fBody);
-	archive.FindString("customLabel", &fCustomLabel);
+    BMessage dataArchive;
+    if (archive.FindMessage("data", &dataArchive) == B_OK)
+        fData = RequestData(dataArchive);
 
-	BMessage params;
-	if (archive.FindMessage("params", &params) == B_OK)
-		fParams = params;
-
-	if (archive.FindString("authType", &fAuthType) != B_OK)
-		fAuthType = "none";
-
-	BMessage authValues;
-	if (archive.FindMessage("authValues", &authValues) == B_OK)
-		fAuthValues = authValues;
-
-	_RefreshText();
+    archive.FindString("customLabel", &fCustomLabel);
+    _RefreshText();
 }
-
 
 status_t
 HistoryItem::Archive(BMessage& archive) const
 {
-	archive.AddString("method", fMethod);
-	archive.AddString("url", fUrl);
-	archive.AddString("body", fBody);
-	archive.AddMessage("params", &fParams);
-	archive.AddString("authType", fAuthType);
-	archive.AddMessage("authValues", &fAuthValues);
-	archive.AddString("customLabel", fCustomLabel);
-	return B_OK;
+    BMessage dataArchive;
+    fData.Archive(dataArchive);
+    archive.AddMessage("data", &dataArchive);
+    archive.AddString("customLabel", fCustomLabel);
+    return B_OK;
 }
 
 
 bool
 HistoryItem::Equals(const HistoryItem& other) const
 {
-	return fMethod == other.fMethod && fUrl == other.fUrl && fBody == other.fBody
-		&& fAuthType == other.fAuthType && MessagesEqual(fParams, other.fParams)
-		&& MessagesEqual(fAuthValues, other.fAuthValues);
+    return fData.Equals(other.fData);
 }
 
 
 void
 HistoryItem::_RefreshText()
 {
-	if (fCustomLabel.Length() > 0)
-		SetText(fCustomLabel.String());
-	else
-		SetText(_BuildLabel(fMethod, fUrl).String());
+    if (fCustomLabel.Length() > 0)
+        SetText(fCustomLabel.String());
+    else
+        SetText(_BuildLabel(fData.fMethod, fData.fUrl).String());
 }
 
 

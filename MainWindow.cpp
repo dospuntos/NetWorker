@@ -349,7 +349,7 @@ MainWindow::MessageReceived(BMessage* message)
 				HistoryItem* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
 
 				if (item != nullptr)
-					_LoadHistoryItem(item);
+					_LoadRequestData(item);
 			}
 			break;
 		}
@@ -392,8 +392,8 @@ MainWindow::MessageReceived(BMessage* message)
 
 				BMessage* clip = be_clipboard->Data();
 				if (clip != nullptr) {
-					clip->AddData("text/plain", B_MIME_TYPE, item->fUrl.String(),
-						item->fUrl.Length());
+					clip->AddData("text/plain", B_MIME_TYPE, item->fData.fUrl.String(),
+						item->fData.fUrl.Length());
 					be_clipboard->Commit();
 				}
 
@@ -880,21 +880,19 @@ MainWindow::_SendRequest()
 	if (requestFields.CountFields() > 0)
 		request.SetFields(requestFields);
 
-	HistoryItem* item = new HistoryItem(method, url.UrlString(), fPendingRequestBody, params,
-		_CurrentAuthType(), _CurrentAuthValues());
+	RequestData data(method, url.UrlString(), fPendingRequestBody, params, _CurrentAuthType(), _CurrentAuthValues());
+	HistoryItem* newItem = new HistoryItem(data);
 
-	// Check for duplicates
 	for (int32 i = 0; i < fHistoryPanel->CountItems(); i++) {
 		auto* existing = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(i));
-		if (existing->Equals(*item)) {
-			item->SetCustomLabel(existing->fCustomLabel);
+		if (existing->Equals(*newItem)) {
+			newItem->SetCustomLabel(existing->fCustomLabel);
 			BListItem* removed = fHistoryPanel->RemoveItem(i);
 			delete removed;
 			break;
 		}
 	}
-
-	fHistoryPanel->AddItem(item, 0); // newest on top
+	fHistoryPanel->AddItem(newItem, 0); // newest on top
 	_UpdateHistoryButtons();
 
 	// Send request
@@ -1030,14 +1028,14 @@ MainWindow::_RestoreValues(BMessage& settings)
 
 
 void
-MainWindow::_LoadHistoryItem(HistoryItem* item)
+MainWindow::_LoadRequestData(HistoryItem* item)
 {
-	fUrlField->SetText(item->fUrl.String());
-	fRequestBodyView->SetText(item->fBody.String());
+	fUrlField->SetText(item->fData.fUrl.String());
+	fRequestBodyView->SetText(item->fData.fBody.String());
 
 	for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
 		BMenuItem* mi = fMethodMenu->ItemAt(i);
-		if (item->fMethod == mi->Label()) {
+		if (item->fData.fMethod == mi->Label()) {
 			mi->SetMarked(true);
 			break;
 		}
@@ -1045,7 +1043,7 @@ MainWindow::_LoadHistoryItem(HistoryItem* item)
 
 	fParamsList->Clear();
 	BMessage param;
-	for (int32 i = 0; item->fParams.FindMessage("param", i, &param) == B_OK; i++) {
+	for (int32 i = 0; item->fData.fParams.FindMessage("param", i, &param) == B_OK; i++) {
 		BString key, value;
 		param.FindString("key", &key);
 		param.FindString("value", &value);
@@ -1059,11 +1057,11 @@ MainWindow::_LoadHistoryItem(HistoryItem* item)
 	}
 
 	BString username, password, token, headerName, headerValue;
-	item->fAuthValues.FindString("username", &username);
-	item->fAuthValues.FindString("password", &password);
-	item->fAuthValues.FindString("token", &token);
-	item->fAuthValues.FindString("headerName", &headerName);
-	item->fAuthValues.FindString("headerValue", &headerValue);
+	item->fData.fAuthValues.FindString("username", &username);
+	item->fData.fAuthValues.FindString("password", &password);
+	item->fData.fAuthValues.FindString("token", &token);
+	item->fData.fAuthValues.FindString("headerName", &headerName);
+	item->fData.fAuthValues.FindString("headerValue", &headerValue);
 
 	fAuthUsernameField->SetText(username.String());
 	fAuthPasswordField->SetText(password.String());
@@ -1071,13 +1069,13 @@ MainWindow::_LoadHistoryItem(HistoryItem* item)
 	fAuthApiKeyNameField->SetText(headerName.String());
 	fAuthApiKeyValueField->SetText(headerValue.String());
 
-	if (item->fAuthType == "basic") {
+	if (item->fData.fAuthType == "basic") {
 		fAuthBasicRadio->SetValue(B_CONTROL_ON);
 		fAuthCardLayout->SetVisibleItem((int32)1);
-	} else if (item->fAuthType == "bearer") {
+	} else if (item->fData.fAuthType == "bearer") {
 		fAuthBearerRadio->SetValue(B_CONTROL_ON);
 		fAuthCardLayout->SetVisibleItem((int32)2);
-	} else if (item->fAuthType == "apikey") {
+	} else if (item->fData.fAuthType == "apikey") {
 		fAuthApiKeyRadio->SetValue(B_CONTROL_ON);
 		fAuthCardLayout->SetVisibleItem((int32)3);
 	} else {

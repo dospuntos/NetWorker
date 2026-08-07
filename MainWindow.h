@@ -99,7 +99,7 @@ private:
 	status_t _SaveSettings();
 	status_t	_LoadSettings(BMessage& settings);
 	void _RestoreValues(BMessage& settings);
-	void _LoadHistoryItem(HistoryItem* item);
+	void _LoadRequestData(HistoryItem* item);
 	void _UpdateHistoryButtons();
 	void _UpdatePreview();
 	void _ApplyAuth(BHttpFields& fields);
