@@ -12,6 +12,8 @@ extern const char* kApplicationSignature;
 extern const char* kApplicationName;
 extern const char* kSettingsFile;
 extern const char* kSettingsDirName;
+extern const char* kCollectionsDirName;
+extern const char* kCollectionsIndexFileName;
 
 enum {
 	M_NEW_FILE = 'fnew',
@@ -34,7 +36,21 @@ enum {
 	M_COPY_HISTORY_URL = 'cphu',
 	M_SHOW_RENAME_DIALOG = 'shrn',
 	M_RENAME_HISTORY_ITEM = 'rnhi',
-	M_UPDATE_PREVIEW = 'upvw'
+	M_UPDATE_PREVIEW = 'upvw',
+
+	M_SELECT_COLLECTION           = 'scol',
+    M_NEW_COLLECTION              = 'ncol',
+    M_CREATE_COLLECTION           = 'crcl',
+    M_DELETE_COLLECTION           = 'dcol',
+    M_CONFIRM_DELETE_COLLECTION   = 'cdcl',
+
+    M_SAVE_TO_COLLECTION          = 'stco',
+    M_CONFIRM_SAVE_TO_COLLECTION  = 'cstc',
+
+    M_LOAD_COLLECTION_ITEM        = 'lcit',
+    M_SHOW_RENAME_COLLECTION_ITEM = 'srci',
+    M_RENAME_COLLECTION_ITEM      = 'rnci',
+    M_DELETE_COLLECTION_ITEM      = 'dcit'
 };
 
 

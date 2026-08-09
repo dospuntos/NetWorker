@@ -6,6 +6,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "Collection.h"
 #include "HistoryItem.h"
 #include <optional>
 
@@ -33,6 +34,7 @@ class BScrollView;
 class BStringView;
 class BSplitView;
 
+static const uint32 M_DEBUG_TEST_COLLECTIONS = 'dtco';
 
 class MainWindow : public BWindow {
 public:
@@ -51,6 +53,7 @@ private:
 	BView* 				_BuildPreviewPanel();
 	BView* 				_BuildResponsePanel();
 	BView* 				_BuildHistoryPanel();
+	BView*				_BuildCollectionPanel();
 	void        		_SendRequest();
 	void        		_ClearResponse();
 
@@ -59,6 +62,7 @@ private:
     BMenuField*         fMethodField;
     BTextControl*       fUrlField;
     BButton*            fSendButton;
+	BButton*			fSaveButton;
     BTextView*          fRequestBodyView;
     BScrollView*        fRequestBodyScroll;
 	BTextView*			fPreviewPanel;
@@ -96,15 +100,35 @@ private:
 	BTextControl*   	fAuthApiKeyNameField;
 	BTextControl*   	fAuthApiKeyValueField;
 
+	BTabView*        fSidebarTabs;
+
+	BMenuField*      fCollectionMenuField;
+	BPopUpMenu*      fCollectionMenu;
+	BListView*       fCollectionListView;
+	BButton*         fNewCollectionButton;
+	BButton*         fDeleteCollectionButton;
+
+	BObjectList<Collection, true> fCollections;
+	int32            fActiveCollectionIndex;
+
 	status_t _SaveSettings();
 	status_t	_LoadSettings(BMessage& settings);
 	void _RestoreValues(BMessage& settings);
-	void _LoadRequestData(HistoryItem* item);
+	void _LoadRequestData(const RequestData& data);
 	void _UpdateHistoryButtons();
 	void _UpdatePreview();
 	void _ApplyAuth(BHttpFields& fields);
 	BString _CurrentAuthType() const;
 	BMessage _CurrentAuthValues() const;
+
+	status_t _CollectionsDirectory(BPath& path);
+	status_t _SaveCollection(Collection* collection);
+	status_t _LoadCollection(const BString& fileName, Collection*& outCollection);
+	status_t _SaveCollectionsIndex();
+	status_t _LoadCollectionsIndex();
+
+	void _RefreshCollectionMenu();
+	void _RefreshCollectionItemList();
 };
 
 #endif

@@ -4,6 +4,7 @@
  */
 
 #include "MainWindow.h"
+#include "Collection.h"
 #include "Constants.h"
 #include "IconMenuItem.h"
 #include "RenameWindow.h"
@@ -137,7 +138,43 @@ public:
 				menu->AddItem(new BMenuItem("Rename" B_UTF8_ELLIPSIS, new BMessage(M_SHOW_RENAME_DIALOG)));
 				menu->AddItem(new BMenuItem("Copy URL", new BMessage(M_COPY_HISTORY_URL)));
 				menu->AddSeparatorItem();
+				menu->AddItem(new BMenuItem("Save to collection" B_UTF8_ELLIPSIS, new BMessage(M_SAVE_TO_COLLECTION)));
+				menu->AddSeparatorItem();
                 menu->AddItem(new BMenuItem("Delete", new BMessage(M_DELETE_HISTORY_ITEM)));
+                menu->SetTargetForItems(Window());
+
+                ConvertToScreen(&where);
+                menu->Go(where, true, true, true);
+            }
+            return;
+        }
+
+        BListView::MouseDown(where);
+    }
+};
+
+
+class CollectionListView : public BListView {
+public:
+    CollectionListView(const char* name)
+        : BListView(name, B_SINGLE_SELECTION_LIST) {}
+
+    void MouseDown(BPoint where) override
+    {
+        BMessage* msg = Window()->CurrentMessage();
+        int32 buttons = msg->GetInt32("buttons", 0);
+
+        if (buttons & B_SECONDARY_MOUSE_BUTTON) {
+            int32 index = IndexOf(where);
+            if (index >= 0) {
+                Select(index);
+
+                BPopUpMenu* menu = new BPopUpMenu("collectionItemContext", false, false);
+                menu->AddItem(new BMenuItem("Load", new BMessage(M_LOAD_COLLECTION_ITEM)));
+                menu->AddItem(new BMenuItem("Rename" B_UTF8_ELLIPSIS,
+                    new BMessage(M_SHOW_RENAME_COLLECTION_ITEM)));
+                menu->AddSeparatorItem();
+                menu->AddItem(new BMenuItem("Delete", new BMessage(M_DELETE_COLLECTION_ITEM)));
                 menu->SetTargetForItems(Window());
 
                 ConvertToScreen(&where);
@@ -157,15 +194,20 @@ MainWindow::MainWindow()
 	:
 	BWindow(BRect(100, 100, 900, 660), kApplicationName, B_TITLED_WINDOW,
 		B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE),
-	fSession(BHttpSession())
+	fSession(BHttpSession()),
+	fActiveCollectionIndex(-1)
 {
 	fMenuBar = _BuildMenu();
 	_BuildLayout();
 
 	// Load and restore settings
 	BMessage settings;
-	_LoadSettings(settings);
-	_RestoreValues(settings);
+	if (_LoadSettings(settings) == B_OK)
+		_RestoreValues(settings);
+
+	_LoadCollectionsIndex();
+	_RefreshCollectionMenu();
+	_RefreshCollectionItemList();
 }
 
 
@@ -349,7 +391,7 @@ MainWindow::MessageReceived(BMessage* message)
 				HistoryItem* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
 
 				if (item != nullptr)
-					_LoadRequestData(item);
+					_LoadRequestData(item->fData);
 			}
 			break;
 		}
@@ -450,6 +492,201 @@ MainWindow::MessageReceived(BMessage* message)
 			}
 			_UpdateHistoryButtons();
 
+			break;
+		}
+
+		case M_SELECT_COLLECTION:
+		{
+			int32 index;
+			if (message->FindInt32("index", &index) == B_OK) {
+				fActiveCollectionIndex = index;
+				_RefreshCollectionMenu();
+				_RefreshCollectionItemList();
+			}
+			break;
+		}
+
+		case M_NEW_COLLECTION:
+		{
+			BRect frame(0, 0, 280, 60);
+			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
+			RenameWindow* win = new RenameWindow(frame, "", -1, BMessenger(this), M_CREATE_COLLECTION);
+			win->SetTitle("New collection");
+			win->Show();
+			break;
+		}
+
+		case M_CREATE_COLLECTION:
+		{
+			BString label;
+			if (message->FindString("label", &label) != B_OK || label.Length() == 0)
+				break;
+
+			Collection* collection = new Collection(label);
+			fCollections.AddItem(collection);
+			fActiveCollectionIndex = fCollections.CountItems() - 1;
+
+			_SaveCollection(collection);
+			_SaveCollectionsIndex();
+			_RefreshCollectionMenu();
+			_RefreshCollectionItemList();
+			break;
+		}
+
+		case M_DELETE_COLLECTION:
+		{
+			if (fActiveCollectionIndex < 0)
+				break;
+
+			BAlert* alert = new BAlert("Delete collection",
+				"Delete this collection permanently? This cannot be undone.",
+				"Cancel", "Delete", nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+			alert->SetShortcut(0, B_ESCAPE);
+			alert->Go(new BInvoker(new BMessage(M_CONFIRM_DELETE_COLLECTION), this));
+			break;
+		}
+
+		case M_CONFIRM_DELETE_COLLECTION:
+		{
+			int32 which = message->GetInt32("which", -1);
+			if (which == 1 && fActiveCollectionIndex >= 0) {
+				Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+				if (collection == nullptr)
+					break;
+
+				BPath dirPath;
+				_CollectionsDirectory(dirPath);
+				BPath filePath(dirPath);
+				filePath.Append(collection->FileName());
+				BEntry(filePath.Path()).Remove();
+
+				fCollections.RemoveItemAt(fActiveCollectionIndex);
+				delete collection;
+
+				fActiveCollectionIndex = fCollections.CountItems() > 0 ? 0 : -1;
+				_SaveCollectionsIndex();
+				_RefreshCollectionMenu();
+				_RefreshCollectionItemList();
+			}
+			break;
+		}
+
+		case M_SAVE_TO_COLLECTION:
+		{
+			if (fActiveCollectionIndex < 0) {
+				fStatusLabel->SetText("No active collection — create one first");
+				break;
+			}
+
+			BRect frame(0, 0, 280, 60);
+			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
+			RenameWindow* win = new RenameWindow(frame, "", -1, BMessenger(this),
+				M_CONFIRM_SAVE_TO_COLLECTION);
+			win->Show();
+			break;
+		}
+
+		case M_CONFIRM_SAVE_TO_COLLECTION:
+		{
+			BString label;
+			if (message->FindString("label", &label) != B_OK || label.Length() == 0)
+				break;
+			if (fActiveCollectionIndex < 0)
+				break;
+
+			BMenuItem* marked = fMethodMenu->FindMarked();
+			BString method(marked ? marked->Label() : "GET");
+			BString urlText(fUrlField->Text());
+			BString bodyText(fRequestBodyView->Text());
+
+			BMessage params;
+			for (int32 i = 0; i < fParamsList->CountRows(); i++) {
+				BRow* row = fParamsList->RowAt(i);
+				auto* keyField = static_cast<BStringField*>(row->GetField(0));
+				auto* valField = static_cast<BStringField*>(row->GetField(1));
+				BMessage param;
+				param.AddString("key", keyField->String());
+				param.AddString("value", valField->String());
+				params.AddMessage("param", &param);
+			}
+
+			RequestData data(method, urlText, bodyText, params, _CurrentAuthType(), _CurrentAuthValues());
+
+			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+			collection->AddItem(new CollectionItem(label, data));
+			_SaveCollection(collection);
+			_RefreshCollectionItemList();
+			break;
+		}
+
+		case M_LOAD_COLLECTION_ITEM:
+		{
+			int32 index = fCollectionListView->CurrentSelection();
+			if (index < 0 || fActiveCollectionIndex < 0)
+				break;
+
+			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+			if (collection == nullptr)
+				break;
+			CollectionItem* item = collection->ItemAt(index);
+			if (item != nullptr)
+				_LoadRequestData(item->fData);   // from your earlier _LoadHistoryItem generalization
+			break;
+		}
+
+		case M_SHOW_RENAME_COLLECTION_ITEM:
+		{
+			int32 index = fCollectionListView->CurrentSelection();
+			if (index < 0 || fActiveCollectionIndex < 0)
+				break;
+
+			CollectionItem* item = fCollections.ItemAt(fActiveCollectionIndex)->ItemAt(index);
+			if (item == nullptr)
+				break;
+
+			BRect frame(0, 0, 280, 60);
+			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
+			RenameWindow* win = new RenameWindow(frame, item->fLabel, index, BMessenger(this),
+				M_RENAME_COLLECTION_ITEM);
+			win->Show();
+			break;
+		}
+
+		case M_RENAME_COLLECTION_ITEM:
+		{
+			int32 index;
+			BString label;
+			if (message->FindInt32("index", &index) != B_OK
+					|| message->FindString("label", &label) != B_OK)
+				break;
+			if (fActiveCollectionIndex < 0)
+				break;
+
+			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+			if (collection == nullptr)
+				break;
+			CollectionItem* item = collection->ItemAt(index);
+			if (item != nullptr) {
+				item->SetLabel(label);
+				_SaveCollection(collection);
+				_RefreshCollectionItemList();
+			}
+			break;
+		}
+
+		case M_DELETE_COLLECTION_ITEM:
+		{
+			int32 index = fCollectionListView->CurrentSelection();
+			if (index < 0 || fActiveCollectionIndex < 0)
+				break;
+
+			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+			if (collection == nullptr)
+				break;
+			CollectionItem* removed = collection->RemoveItem(index);
+			delete removed;
+			_SaveCollection(collection);
+			_RefreshCollectionItemList();
 			break;
 		}
 
@@ -689,11 +926,15 @@ MainWindow::_BuildRequestPanel()
 	fSendButton = new BButton("send", "Send", new BMessage(M_SEND_REQUEST));
 	fSendButton->MakeDefault(true);
 
+	// Save button
+	fSaveButton = new BButton("saveToCollection", "Save", new BMessage(M_SAVE_TO_COLLECTION));
+
 	BView* requestTopBar = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
 							   .SetInsets(B_USE_WINDOW_INSETS)
 							   .Add(fMethodField)
 							   .Add(fUrlField)
 							   .Add(fSendButton)
+							   .Add(fSaveButton)
 							   .View();
 
 	// Request body (Raw tab)
@@ -791,6 +1032,36 @@ MainWindow::_BuildHistoryPanel()
 		.View();
 }
 
+BView*
+MainWindow::_BuildCollectionPanel()
+{
+	// Collection dropdown
+	fCollectionMenu = new BPopUpMenu("(no collections)");
+	fCollectionMenuField = new BMenuField("collectionSelect", nullptr, fCollectionMenu);
+
+	fNewCollectionButton = new BButton("newCollection", "New", new BMessage(M_NEW_COLLECTION));
+	fDeleteCollectionButton = new BButton("deleteCollection", "Delete", new BMessage(M_DELETE_COLLECTION));
+	fDeleteCollectionButton->SetEnabled(false);
+
+	BView* collectionHeader = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
+								   .Add(fCollectionMenuField)
+								   .AddGlue()
+								   .Add(fNewCollectionButton)
+								   .Add(fDeleteCollectionButton)
+								   .View();
+
+	// Collection items list
+	fCollectionListView = new CollectionListView("collectionItems");
+	BScrollView* collectionScroll = new BScrollView("collectionItemsScroll", fCollectionListView,
+		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
+
+	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+								   .SetInsets(B_USE_WINDOW_INSETS)
+								   .Add(collectionHeader)
+								   .Add(collectionScroll)
+								   .View();
+}
+
 
 void
 MainWindow::_BuildLayout()
@@ -798,18 +1069,27 @@ MainWindow::_BuildLayout()
 	BView* requestArea = _BuildRequestPanel();
 	BView* responsePanel = _BuildResponsePanel();
 	BView* historyPanel = _BuildHistoryPanel();
+	BView* collectionsPanel = _BuildCollectionPanel();
 
 	fSplitView = new BSplitView(B_VERTICAL, B_USE_SMALL_SPACING);
 	fSplitView->AddChild(requestArea, 0.5f);
 	fSplitView->AddChild(responsePanel, 0.5f);
 
+	// Sidebar: History / Collections tabs
+	fSidebarTabs = new BTabView("sidebarTabs");
+	fSidebarTabs->AddTab(historyPanel);
+	fSidebarTabs->TabAt(0)->SetLabel("History");
+	fSidebarTabs->AddTab(collectionsPanel);
+	fSidebarTabs->TabAt(1)->SetLabel("Collections");
+
 	BSplitView* outerSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
 	outerSplit->AddChild(fSplitView, 0.8f);
-	outerSplit->AddChild(historyPanel, 0.2f);
+	outerSplit->AddChild(fSidebarTabs, 0.2f);
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(outerSplit).End();
 	_UpdateHistoryButtons();
 	_UpdatePreview();
+	_RefreshCollectionMenu();
 }
 
 
@@ -1028,14 +1308,14 @@ MainWindow::_RestoreValues(BMessage& settings)
 
 
 void
-MainWindow::_LoadRequestData(HistoryItem* item)
+MainWindow::_LoadRequestData(const RequestData& data)
 {
-	fUrlField->SetText(item->fData.fUrl.String());
-	fRequestBodyView->SetText(item->fData.fBody.String());
+	fUrlField->SetText(data.fUrl.String());
+	fRequestBodyView->SetText(data.fBody.String());
 
 	for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
 		BMenuItem* mi = fMethodMenu->ItemAt(i);
-		if (item->fData.fMethod == mi->Label()) {
+		if (data.fMethod == mi->Label()) {
 			mi->SetMarked(true);
 			break;
 		}
@@ -1043,7 +1323,7 @@ MainWindow::_LoadRequestData(HistoryItem* item)
 
 	fParamsList->Clear();
 	BMessage param;
-	for (int32 i = 0; item->fData.fParams.FindMessage("param", i, &param) == B_OK; i++) {
+	for (int32 i = 0; data.fParams.FindMessage("param", i, &param) == B_OK; i++) {
 		BString key, value;
 		param.FindString("key", &key);
 		param.FindString("value", &value);
@@ -1057,11 +1337,11 @@ MainWindow::_LoadRequestData(HistoryItem* item)
 	}
 
 	BString username, password, token, headerName, headerValue;
-	item->fData.fAuthValues.FindString("username", &username);
-	item->fData.fAuthValues.FindString("password", &password);
-	item->fData.fAuthValues.FindString("token", &token);
-	item->fData.fAuthValues.FindString("headerName", &headerName);
-	item->fData.fAuthValues.FindString("headerValue", &headerValue);
+	data.fAuthValues.FindString("username", &username);
+	data.fAuthValues.FindString("password", &password);
+	data.fAuthValues.FindString("token", &token);
+	data.fAuthValues.FindString("headerName", &headerName);
+	data.fAuthValues.FindString("headerValue", &headerValue);
 
 	fAuthUsernameField->SetText(username.String());
 	fAuthPasswordField->SetText(password.String());
@@ -1069,13 +1349,13 @@ MainWindow::_LoadRequestData(HistoryItem* item)
 	fAuthApiKeyNameField->SetText(headerName.String());
 	fAuthApiKeyValueField->SetText(headerValue.String());
 
-	if (item->fData.fAuthType == "basic") {
+	if (data.fAuthType == "basic") {
 		fAuthBasicRadio->SetValue(B_CONTROL_ON);
 		fAuthCardLayout->SetVisibleItem((int32)1);
-	} else if (item->fData.fAuthType == "bearer") {
+	} else if (data.fAuthType == "bearer") {
 		fAuthBearerRadio->SetValue(B_CONTROL_ON);
 		fAuthCardLayout->SetVisibleItem((int32)2);
-	} else if (item->fData.fAuthType == "apikey") {
+	} else if (data.fAuthType == "apikey") {
 		fAuthApiKeyRadio->SetValue(B_CONTROL_ON);
 		fAuthCardLayout->SetVisibleItem((int32)3);
 	} else {
@@ -1212,4 +1492,195 @@ MainWindow::_CurrentAuthValues() const
 	}
 
 	return values;
+}
+
+
+status_t
+MainWindow::_CollectionsDirectory(BPath& path)
+{
+    status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
+    if (status != B_OK)
+        return status;
+
+    status = path.Append(kSettingsDirName);
+    if (status != B_OK)
+        return status;
+
+    status = path.Append(kCollectionsDirName);
+    if (status != B_OK)
+        return status;
+
+    return create_directory(path.Path(), 0755);
+}
+
+
+status_t
+MainWindow::_SaveCollection(Collection* collection)
+{
+    BPath dirPath;
+    status_t status = _CollectionsDirectory(dirPath);
+    if (status != B_OK)
+        return status;
+
+    BPath filePath(dirPath);
+    status = filePath.Append(collection->FileName());
+    if (status != B_OK)
+        return status;
+
+    BFile file;
+    status = file.SetTo(filePath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+    if (status != B_OK)
+        return status;
+
+    BMessage archive;
+    collection->Archive(archive);
+    return archive.Flatten(&file);
+}
+
+status_t
+MainWindow::_LoadCollection(const BString& fileName, Collection*& outCollection)
+{
+    BPath dirPath;
+    status_t status = _CollectionsDirectory(dirPath);
+    if (status != B_OK)
+        return status;
+
+    BPath filePath(dirPath);
+    status = filePath.Append(fileName);
+    if (status != B_OK)
+        return status;
+
+    BFile file;
+    status = file.SetTo(filePath.Path(), B_READ_ONLY);
+    if (status != B_OK)
+        return status;
+
+    BMessage archive;
+    status = archive.Unflatten(&file);
+    if (status != B_OK)
+        return status;
+
+    outCollection = new Collection(archive);
+    outCollection->SetFileName(fileName);
+    return B_OK;
+}
+
+
+status_t
+MainWindow::_SaveCollectionsIndex()
+{
+    BPath dirPath;
+    status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &dirPath);
+    if (status != B_OK)
+        return status;
+    status = dirPath.Append(kSettingsDirName);
+    if (status != B_OK)
+        return status;
+
+    BPath indexPath(dirPath);
+    status = indexPath.Append(kCollectionsIndexFileName);
+    if (status != B_OK)
+        return status;
+
+    BFile file;
+    status = file.SetTo(indexPath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+    if (status != B_OK)
+        return status;
+
+	BMessage index;
+	for (int32 i = 0; i < fCollections.CountItems(); i++)
+        index.AddString("fileName", fCollections.ItemAt(i)->FileName());
+
+	if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems())
+		index.AddString("activeFileName", fCollections.ItemAt(fActiveCollectionIndex)->FileName());
+
+	return index.Flatten(&file);
+}
+
+status_t
+MainWindow::_LoadCollectionsIndex()
+{
+    BPath dirPath;
+    status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &dirPath);
+    if (status != B_OK)
+        return status;
+    status = dirPath.Append(kSettingsDirName);
+    if (status != B_OK)
+        return status;
+
+    BPath indexPath(dirPath);
+    status = indexPath.Append(kCollectionsIndexFileName);
+    if (status != B_OK)
+        return status;
+
+    BFile file;
+    status = file.SetTo(indexPath.Path(), B_READ_ONLY);
+    if (status != B_OK)
+        return B_OK;   // no index yet (first run)
+
+    BMessage index;
+    status = index.Unflatten(&file);
+    if (status != B_OK)
+        return status;
+
+    BString fileName;
+    for (int32 i = 0; index.FindString("fileName", i, &fileName) == B_OK; i++) {
+        Collection* collection = nullptr;
+        if (_LoadCollection(fileName, collection) == B_OK)
+            fCollections.AddItem(collection);
+    }
+
+	fActiveCollectionIndex = -1; // default: none, if nothing matches
+
+	BString activeFileName;
+	if (index.FindString("activeFileName", &activeFileName) == B_OK) {
+		for (int32 i = 0; i < fCollections.CountItems(); i++) {
+			if (fCollections.ItemAt(i)->FileName() == activeFileName) {
+				fActiveCollectionIndex = i;
+				break;
+			}
+		}
+	}
+
+	_RefreshCollectionMenu();
+
+    return B_OK;
+}
+
+
+void
+MainWindow::_RefreshCollectionMenu()
+{
+    for (int32 i = fCollectionMenu->CountItems() - 1; i >= 0; i--)
+        delete fCollectionMenu->RemoveItem(i);
+
+    for (int32 i = 0; i < fCollections.CountItems(); i++) {
+        BMessage* msg = new BMessage(M_SELECT_COLLECTION);
+        msg->AddInt32("index", i);
+        BMenuItem* item = new BMenuItem(fCollections.ItemAt(i)->Name().String(), msg);
+        fCollectionMenu->AddItem(item);
+        if (i == fActiveCollectionIndex)
+            item->SetMarked(true);
+    }
+    fCollectionMenu->SetTargetForItems(this);
+
+    if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems())
+        fCollectionMenuField->MenuItem()->SetLabel(fCollections.ItemAt(fActiveCollectionIndex)->Name().String());
+    else
+        fCollectionMenuField->MenuItem()->SetLabel("(no collections)");
+
+    fDeleteCollectionButton->SetEnabled(fActiveCollectionIndex >= 0);
+}
+
+void
+MainWindow::_RefreshCollectionItemList()
+{
+    fCollectionListView->MakeEmpty();
+
+    if (fActiveCollectionIndex < 0 || fActiveCollectionIndex >= fCollections.CountItems())
+        return;
+
+    Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+    for (int32 i = 0; i < collection->CountItems(); i++)
+        fCollectionListView->AddItem(new BStringItem(collection->ItemAt(i)->fLabel));
 }
