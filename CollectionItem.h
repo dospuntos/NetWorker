@@ -13,15 +13,19 @@
 
 class CollectionItem : public BStringItem {
 public:
-    CollectionItem(const BString& label, const RequestData& data);
+    explicit CollectionItem(const RequestData& data, const BString& customLabel = "");
     explicit CollectionItem(const BMessage& archive);
 
     status_t Archive(BMessage& archive) const;
 
-    void SetLabel(const BString& label);
+    void SetCustomLabel(const BString& label);
 
     RequestData fData;
-    BString     fLabel;
+    BString     fCustomLabel;
+
+private:
+	void _RefreshText();
+	static BString _BuildLabel(const BString& method, const BString& url);
 };
 
 #endif // COLLECTION_ITEM_H

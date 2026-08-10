@@ -574,24 +574,12 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_SAVE_TO_COLLECTION:
 		{
 			if (fActiveCollectionIndex < 0) {
-				fStatusLabel->SetText("No active collection — create one first");
+				fStatusLabel->SetText("No active collection - create one first");
 				break;
 			}
 
-			BRect frame(0, 0, 280, 60);
-			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
-			RenameWindow* win = new RenameWindow(frame, "", -1, BMessenger(this),
-				M_CONFIRM_SAVE_TO_COLLECTION);
-			win->Show();
-			break;
-		}
-
-		case M_CONFIRM_SAVE_TO_COLLECTION:
-		{
-			BString label;
-			if (message->FindString("label", &label) != B_OK || label.Length() == 0)
-				break;
-			if (fActiveCollectionIndex < 0)
+			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+			if (collection == nullptr)
 				break;
 
 			BMenuItem* marked = fMethodMenu->FindMarked();
@@ -612,10 +600,10 @@ MainWindow::MessageReceived(BMessage* message)
 
 			RequestData data(method, urlText, bodyText, params, _CurrentAuthType(), _CurrentAuthValues());
 
-			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-			collection->AddItem(new CollectionItem(label, data));
+			collection->AddItem(new CollectionItem(data));
 			_SaveCollection(collection);
 			_RefreshCollectionItemList();
+			fStatusLabel->SetText("Saved to collection");
 			break;
 		}
 
@@ -630,7 +618,7 @@ MainWindow::MessageReceived(BMessage* message)
 				break;
 			CollectionItem* item = collection->ItemAt(index);
 			if (item != nullptr)
-				_LoadRequestData(item->fData);   // from your earlier _LoadHistoryItem generalization
+				_LoadRequestData(item->fData);
 			break;
 		}
 
@@ -646,7 +634,7 @@ MainWindow::MessageReceived(BMessage* message)
 
 			BRect frame(0, 0, 280, 60);
 			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
-			RenameWindow* win = new RenameWindow(frame, item->fLabel, index, BMessenger(this),
+			RenameWindow* win = new RenameWindow(frame, item->Text(), index, BMessenger(this),
 				M_RENAME_COLLECTION_ITEM);
 			win->Show();
 			break;
@@ -667,7 +655,7 @@ MainWindow::MessageReceived(BMessage* message)
 				break;
 			CollectionItem* item = collection->ItemAt(index);
 			if (item != nullptr) {
-				item->SetLabel(label);
+				item->SetCustomLabel(label);
 				_SaveCollection(collection);
 				_RefreshCollectionItemList();
 			}
@@ -816,8 +804,10 @@ MainWindow::_BuildAuthPanel()
 
 	// Card 1: Basic
 	fAuthUsernameField = new BTextControl("authUsername", "Username", "", nullptr);
+	fAuthUsernameField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	fAuthPasswordField = new BTextControl("authPassword", "Password", "", nullptr);
 	fAuthPasswordField->TextView()->HideTyping(true);
+	fAuthPasswordField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	BView* authBasicCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							   .Add(fAuthUsernameField)
 							   .Add(fAuthPasswordField)
@@ -826,6 +816,7 @@ MainWindow::_BuildAuthPanel()
 
 	// Card 2: Bearer token
 	fAuthTokenField = new BTextControl("authToken", "Token", "", nullptr);
+	fAuthTokenField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	BView* authBearerCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 								.Add(fAuthTokenField)
 								.AddGlue()
@@ -833,7 +824,9 @@ MainWindow::_BuildAuthPanel()
 
 	// Card 3: API key
 	fAuthApiKeyNameField = new BTextControl("authApiKeyName", "Header name", "", nullptr);
+	fAuthApiKeyNameField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	fAuthApiKeyValueField = new BTextControl("authApiKeyValue", "Value", "", nullptr);
+	fAuthApiKeyValueField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	BView* authApiKeyCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 								.Add(fAuthApiKeyNameField)
 								.Add(fAuthApiKeyValueField)
@@ -1052,6 +1045,7 @@ MainWindow::_BuildCollectionPanel()
 
 	// Collection items list
 	fCollectionListView = new CollectionListView("collectionItems");
+	fCollectionListView->SetInvocationMessage(new BMessage(M_LOAD_COLLECTION_ITEM));
 	BScrollView* collectionScroll = new BScrollView("collectionItemsScroll", fCollectionListView,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 
@@ -1456,7 +1450,7 @@ MainWindow::_ApplyAuth(BHttpFields& fields)
 	} else if (fAuthApiKeyRadio->Value() == B_CONTROL_ON) {
 		BString name(fAuthApiKeyNameField->Text());
 		BString value(fAuthApiKeyValueField->Text());
-		if (name.Length() > 0)
+		if (name.Length() > 0 && value.Length() > 0)
 			fields.AddField(name.String(), value.String());
 	}
 }
@@ -1682,5 +1676,5 @@ MainWindow::_RefreshCollectionItemList()
 
     Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
     for (int32 i = 0; i < collection->CountItems(); i++)
-        fCollectionListView->AddItem(new BStringItem(collection->ItemAt(i)->fLabel));
+		fCollectionListView->AddItem(new BStringItem(collection->ItemAt(i)->Text()));
 }

@@ -34,7 +34,6 @@ class BScrollView;
 class BStringView;
 class BSplitView;
 
-static const uint32 M_DEBUG_TEST_COLLECTIONS = 'dtco';
 
 class MainWindow : public BWindow {
 public:
