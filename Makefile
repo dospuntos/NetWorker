@@ -29,17 +29,17 @@ APP_MIME_SIG = application/x-vnd.jpw-NetWorker
 #	means this Makefile will not work correctly if two source files with the
 #	same name (source.c or source.cpp) are included from different directories.
 #	Also note that spaces in folder names do not work well with this Makefile.
-SRCS =  App.cpp \
-		MainWindow.cpp \
-		HistoryItem.cpp \
-		Constants.cpp \
-		IconMenuItem.cpp \
-		RenameWindow.cpp \
-		RequestData.cpp \
-		Collection.cpp \
-		CollectionItem.cpp \
-		AuthPanel.cpp \
-		ParamsPanel.cpp
+SRCS =  src/App.cpp \
+		src/MainWindow.cpp \
+		src/HistoryItem.cpp \
+		src/Constants.cpp \
+		src/RequestData.cpp \
+		src/Collection.cpp \
+		src/CollectionItem.cpp \
+		src/layout/IconMenuItem.cpp \
+		src/layout/RenameWindow.cpp \
+		src/layout/AuthPanel.cpp \
+		src/layout/ParamsPanel.cpp
 
 #	Specify the resource definition files to use. Full or relative paths can be
 #	used.
