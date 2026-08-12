@@ -89,32 +89,6 @@ class PreviewTabView : public BTabView {
 };
 
 
-BString
-Base64Encode(const BString& input)
-{
-	static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-	BString output;
-	int32 len = input.Length();
-	const unsigned char* data = (const unsigned char*)input.String();
-
-	for (int32 i = 0; i < len; i += 3) {
-		int32 chunkLen = std::min((int32)3, len - i);
-		uint32 chunk = data[i] << 16;
-		if (chunkLen > 1)
-			chunk |= data[i + 1] << 8;
-		if (chunkLen > 2)
-			chunk |= data[i + 2];
-
-		output << table[(chunk >> 18) & 0x3F];
-		output << table[(chunk >> 12) & 0x3F];
-		output << (chunkLen > 1 ? table[(chunk >> 6) & 0x3F] : '=');
-		output << (chunkLen > 2 ? table[chunk & 0x3F] : '=');
-	}
-
-	return output;
-}
-
 class HistoryListView : public BListView {
 public:
     HistoryListView(const char* name)
@@ -356,15 +330,8 @@ MainWindow::MessageReceived(BMessage* message)
 
 		case M_AUTH_TYPE_CHANGED:
 		{
-			int32 index = 0;
-			if (fAuthBasicRadio->Value() == B_CONTROL_ON)
-				index = 1;
-			else if (fAuthBearerRadio->Value() == B_CONTROL_ON)
-				index = 2;
-			else if (fAuthApiKeyRadio->Value() == B_CONTROL_ON)
-				index = 3;
-
-			fAuthCardLayout->SetVisibleItem(index);
+			fAuthPanel->UpdateVisibleCard();
+			_UpdatePreview();
 			break;
 		}
 
@@ -510,7 +477,8 @@ MainWindow::MessageReceived(BMessage* message)
 		{
 			BRect frame(0, 0, 280, 60);
 			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
-			RenameWindow* win = new RenameWindow(frame, "", -1, BMessenger(this), M_CREATE_COLLECTION);
+			RenameWindow* win
+				= new RenameWindow(frame, "", -1, BMessenger(this), M_CREATE_COLLECTION);
 			win->SetTitle("New collection");
 			win->Show();
 			break;
@@ -539,8 +507,8 @@ MainWindow::MessageReceived(BMessage* message)
 				break;
 
 			BAlert* alert = new BAlert("Delete collection",
-				"Delete this collection permanently? This cannot be undone.",
-				"Cancel", "Delete", nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+				"Delete this collection permanently? This cannot be undone.", "Cancel", "Delete",
+				nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
 			alert->SetShortcut(0, B_ESCAPE);
 			alert->Go(new BInvoker(new BMessage(M_CONFIRM_DELETE_COLLECTION), this));
 			break;
@@ -598,7 +566,8 @@ MainWindow::MessageReceived(BMessage* message)
 				params.AddMessage("param", &param);
 			}
 
-			RequestData data(method, urlText, bodyText, params, _CurrentAuthType(), _CurrentAuthValues());
+			RequestData data(method, urlText, bodyText, params, fAuthPanel->CurrentType(),
+				fAuthPanel->CurrentValues());
 
 			collection->AddItem(new CollectionItem(data));
 			_SaveCollection(collection);
@@ -645,8 +614,9 @@ MainWindow::MessageReceived(BMessage* message)
 			int32 index;
 			BString label;
 			if (message->FindInt32("index", &index) != B_OK
-					|| message->FindString("label", &label) != B_OK)
+				|| message->FindString("label", &label) != B_OK) {
 				break;
+			}
 			if (fActiveCollectionIndex < 0)
 				break;
 
@@ -777,80 +747,6 @@ MainWindow::_BuildMenu()
 
 
 BView*
-MainWindow::_BuildAuthPanel()
-{
-	fAuthNoneRadio = new BRadioButton("authNone", "None", new BMessage(M_AUTH_TYPE_CHANGED));
-	fAuthBasicRadio = new BRadioButton("authBasic", "Basic", new BMessage(M_AUTH_TYPE_CHANGED));
-	fAuthBearerRadio
-		= new BRadioButton("authBearer", "Bearer token", new BMessage(M_AUTH_TYPE_CHANGED));
-	fAuthApiKeyRadio = new BRadioButton("authApiKey", "API key", new BMessage(M_AUTH_TYPE_CHANGED));
-	fAuthNoneRadio->SetValue(B_CONTROL_ON);
-
-	fAuthNoneRadio->SetTarget(this);
-	fAuthBasicRadio->SetTarget(this);
-	fAuthBearerRadio->SetTarget(this);
-	fAuthApiKeyRadio->SetTarget(this);
-
-	BView* authTypeRow = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
-							 .Add(fAuthNoneRadio)
-							 .Add(fAuthBasicRadio)
-							 .Add(fAuthBearerRadio)
-							 .Add(fAuthApiKeyRadio)
-							 .AddGlue()
-							 .View();
-
-	// Card 0: None
-	BView* authNoneCard = new BView("authNoneCard", B_WILL_DRAW);
-
-	// Card 1: Basic
-	fAuthUsernameField = new BTextControl("authUsername", "Username", "", nullptr);
-	fAuthUsernameField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
-	fAuthPasswordField = new BTextControl("authPassword", "Password", "", nullptr);
-	fAuthPasswordField->TextView()->HideTyping(true);
-	fAuthPasswordField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
-	BView* authBasicCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-							   .Add(fAuthUsernameField)
-							   .Add(fAuthPasswordField)
-							   .AddGlue()
-							   .View();
-
-	// Card 2: Bearer token
-	fAuthTokenField = new BTextControl("authToken", "Token", "", nullptr);
-	fAuthTokenField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
-	BView* authBearerCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-								.Add(fAuthTokenField)
-								.AddGlue()
-								.View();
-
-	// Card 3: API key
-	fAuthApiKeyNameField = new BTextControl("authApiKeyName", "Header name", "", nullptr);
-	fAuthApiKeyNameField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
-	fAuthApiKeyValueField = new BTextControl("authApiKeyValue", "Value", "", nullptr);
-	fAuthApiKeyValueField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
-	BView* authApiKeyCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-								.Add(fAuthApiKeyNameField)
-								.Add(fAuthApiKeyValueField)
-								.AddGlue()
-								.View();
-
-	BView* authCardsView = new BView("authCards", 0);
-	fAuthCardLayout = new BCardLayout();
-	authCardsView->SetLayout(fAuthCardLayout);
-	fAuthCardLayout->AddView(authNoneCard);
-	fAuthCardLayout->AddView(authBasicCard);
-	fAuthCardLayout->AddView(authBearerCard);
-	fAuthCardLayout->AddView(authApiKeyCard);
-	fAuthCardLayout->SetVisibleItem((int32)0);
-
-	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-		.SetInsets(B_USE_WINDOW_INSETS)
-		.Add(authTypeRow)
-		.Add(authCardsView)
-		.View();
-}
-
-
-BView*
 MainWindow::_BuildParamsPanel()
 {
 	fParamsList = new BColumnListView("paramsList", B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE,
@@ -936,14 +832,15 @@ MainWindow::_BuildRequestPanel()
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 
 	BView* paramsPanel = _BuildParamsPanel();
-	BView* authPanel = _BuildAuthPanel();
+	fAuthPanel = new AuthPanel();
+	fAuthPanel->SetTarget(this, M_AUTH_TYPE_CHANGED);
 
 	fBodyTabView = new PreviewTabView("bodyTabs");
 	fBodyTabView->AddTab(fRequestBodyScroll);
 	fBodyTabView->TabAt(0)->SetLabel("Raw");
 	fBodyTabView->AddTab(paramsPanel);
 	fBodyTabView->TabAt(1)->SetLabel("Form");
-	fBodyTabView->AddTab(authPanel);
+	fBodyTabView->AddTab(fAuthPanel->View());
 	fBodyTabView->TabAt(2)->SetLabel("Authorization");
 
 	BView* bodyPanel = BLayoutBuilder::Group<>(B_VERTICAL)
@@ -1025,6 +922,7 @@ MainWindow::_BuildHistoryPanel()
 		.View();
 }
 
+
 BView*
 MainWindow::_BuildCollectionPanel()
 {
@@ -1033,15 +931,16 @@ MainWindow::_BuildCollectionPanel()
 	fCollectionMenuField = new BMenuField("collectionSelect", nullptr, fCollectionMenu);
 
 	fNewCollectionButton = new BButton("newCollection", "New", new BMessage(M_NEW_COLLECTION));
-	fDeleteCollectionButton = new BButton("deleteCollection", "Delete", new BMessage(M_DELETE_COLLECTION));
+	fDeleteCollectionButton
+		= new BButton("deleteCollection", "Delete", new BMessage(M_DELETE_COLLECTION));
 	fDeleteCollectionButton->SetEnabled(false);
 
 	BView* collectionHeader = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
-								   .Add(fCollectionMenuField)
-								   .AddGlue()
-								   .Add(fNewCollectionButton)
-								   .Add(fDeleteCollectionButton)
-								   .View();
+								  .Add(fCollectionMenuField)
+								  .AddGlue()
+								  .Add(fNewCollectionButton)
+								  .Add(fDeleteCollectionButton)
+								  .View();
 
 	// Collection items list
 	fCollectionListView = new CollectionListView("collectionItems");
@@ -1050,10 +949,10 @@ MainWindow::_BuildCollectionPanel()
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 
 	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-								   .SetInsets(B_USE_WINDOW_INSETS)
-								   .Add(collectionHeader)
-								   .Add(collectionScroll)
-								   .View();
+		.SetInsets(B_USE_WINDOW_INSETS)
+		.Add(collectionHeader)
+		.Add(collectionScroll)
+		.View();
 }
 
 
@@ -1150,11 +1049,12 @@ MainWindow::_SendRequest()
 	}
 
 	BHttpFields requestFields;
-	_ApplyAuth(requestFields);
+	fAuthPanel->ApplyTo(requestFields);
 	if (requestFields.CountFields() > 0)
 		request.SetFields(requestFields);
 
-	RequestData data(method, url.UrlString(), fPendingRequestBody, params, _CurrentAuthType(), _CurrentAuthValues());
+	RequestData data(method, url.UrlString(), fPendingRequestBody, params,
+		fAuthPanel->CurrentType(), fAuthPanel->CurrentValues());
 	HistoryItem* newItem = new HistoryItem(data);
 
 	for (int32 i = 0; i < fHistoryPanel->CountItems(); i++) {
@@ -1337,25 +1237,7 @@ MainWindow::_LoadRequestData(const RequestData& data)
 	data.fAuthValues.FindString("headerName", &headerName);
 	data.fAuthValues.FindString("headerValue", &headerValue);
 
-	fAuthUsernameField->SetText(username.String());
-	fAuthPasswordField->SetText(password.String());
-	fAuthTokenField->SetText(token.String());
-	fAuthApiKeyNameField->SetText(headerName.String());
-	fAuthApiKeyValueField->SetText(headerValue.String());
-
-	if (data.fAuthType == "basic") {
-		fAuthBasicRadio->SetValue(B_CONTROL_ON);
-		fAuthCardLayout->SetVisibleItem((int32)1);
-	} else if (data.fAuthType == "bearer") {
-		fAuthBearerRadio->SetValue(B_CONTROL_ON);
-		fAuthCardLayout->SetVisibleItem((int32)2);
-	} else if (data.fAuthType == "apikey") {
-		fAuthApiKeyRadio->SetValue(B_CONTROL_ON);
-		fAuthCardLayout->SetVisibleItem((int32)3);
-	} else {
-		fAuthNoneRadio->SetValue(B_CONTROL_ON);
-		fAuthCardLayout->SetVisibleItem((int32)0);
-	}
+	fAuthPanel->LoadFrom(data.fAuthType, data.fAuthValues);
 }
 
 
@@ -1382,7 +1264,7 @@ MainWindow::_UpdatePreview()
 		preview << "Host: " << url.Host() << "\n";
 
 	BHttpFields previewFields;
-	_ApplyAuth(previewFields);
+	fAuthPanel->ApplyTo(previewFields);
 	for (const BHttpFields::Field& field : previewFields) {
 		std::string_view name = field.Name();
 		std::string_view value = field.Value();
@@ -1428,162 +1310,102 @@ MainWindow::_UpdatePreview()
 }
 
 
-void
-MainWindow::_ApplyAuth(BHttpFields& fields)
-{
-	if (fAuthBasicRadio->Value() == B_CONTROL_ON) {
-		BString credentials;
-		credentials << fAuthUsernameField->Text() << ":" << fAuthPasswordField->Text();
-
-		BString header;
-		header << "Basic " << Base64Encode(credentials);
-		fields.AddField("Authorization", header.String());
-
-	} else if (fAuthBearerRadio->Value() == B_CONTROL_ON) {
-		BString token(fAuthTokenField->Text());
-		if (token.Length() > 0) {
-			BString header;
-			header << "Bearer " << token;
-			fields.AddField("Authorization", header.String());
-		}
-
-	} else if (fAuthApiKeyRadio->Value() == B_CONTROL_ON) {
-		BString name(fAuthApiKeyNameField->Text());
-		BString value(fAuthApiKeyValueField->Text());
-		if (name.Length() > 0 && value.Length() > 0)
-			fields.AddField(name.String(), value.String());
-	}
-}
-
-
-BString
-MainWindow::_CurrentAuthType() const
-{
-	if (fAuthBasicRadio->Value() == B_CONTROL_ON)
-		return "basic";
-	if (fAuthBearerRadio->Value() == B_CONTROL_ON)
-		return "bearer";
-	if (fAuthApiKeyRadio->Value() == B_CONTROL_ON)
-		return "apikey";
-	return "none";
-}
-
-
-BMessage
-MainWindow::_CurrentAuthValues() const
-{
-	BMessage values;
-	BString type = _CurrentAuthType();
-
-	if (type == "basic") {
-		values.AddString("username", fAuthUsernameField->Text());
-		values.AddString("password", fAuthPasswordField->Text());
-	} else if (type == "bearer") {
-		values.AddString("token", fAuthTokenField->Text());
-	} else if (type == "apikey") {
-		values.AddString("headerName", fAuthApiKeyNameField->Text());
-		values.AddString("headerValue", fAuthApiKeyValueField->Text());
-	}
-
-	return values;
-}
-
-
 status_t
 MainWindow::_CollectionsDirectory(BPath& path)
 {
-    status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
-    if (status != B_OK)
-        return status;
+	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
+	if (status != B_OK)
+		return status;
 
-    status = path.Append(kSettingsDirName);
-    if (status != B_OK)
-        return status;
+	status = path.Append(kSettingsDirName);
+	if (status != B_OK)
+		return status;
 
-    status = path.Append(kCollectionsDirName);
-    if (status != B_OK)
-        return status;
+	status = path.Append(kCollectionsDirName);
+	if (status != B_OK)
+		return status;
 
-    return create_directory(path.Path(), 0755);
+	return create_directory(path.Path(), 0755);
 }
 
 
 status_t
 MainWindow::_SaveCollection(Collection* collection)
 {
-    BPath dirPath;
-    status_t status = _CollectionsDirectory(dirPath);
-    if (status != B_OK)
-        return status;
+	BPath dirPath;
+	status_t status = _CollectionsDirectory(dirPath);
+	if (status != B_OK)
+		return status;
 
-    BPath filePath(dirPath);
-    status = filePath.Append(collection->FileName());
-    if (status != B_OK)
-        return status;
+	BPath filePath(dirPath);
+	status = filePath.Append(collection->FileName());
+	if (status != B_OK)
+		return status;
 
-    BFile file;
-    status = file.SetTo(filePath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
-    if (status != B_OK)
-        return status;
+	BFile file;
+	status = file.SetTo(filePath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+	if (status != B_OK)
+		return status;
 
-    BMessage archive;
-    collection->Archive(archive);
-    return archive.Flatten(&file);
+	BMessage archive;
+	collection->Archive(archive);
+	return archive.Flatten(&file);
 }
+
 
 status_t
 MainWindow::_LoadCollection(const BString& fileName, Collection*& outCollection)
 {
-    BPath dirPath;
-    status_t status = _CollectionsDirectory(dirPath);
-    if (status != B_OK)
-        return status;
+	BPath dirPath;
+	status_t status = _CollectionsDirectory(dirPath);
+	if (status != B_OK)
+		return status;
 
-    BPath filePath(dirPath);
-    status = filePath.Append(fileName);
-    if (status != B_OK)
-        return status;
+	BPath filePath(dirPath);
+	status = filePath.Append(fileName);
+	if (status != B_OK)
+		return status;
 
-    BFile file;
-    status = file.SetTo(filePath.Path(), B_READ_ONLY);
-    if (status != B_OK)
-        return status;
+	BFile file;
+	status = file.SetTo(filePath.Path(), B_READ_ONLY);
+	if (status != B_OK)
+		return status;
 
-    BMessage archive;
-    status = archive.Unflatten(&file);
-    if (status != B_OK)
-        return status;
+	BMessage archive;
+	status = archive.Unflatten(&file);
+	if (status != B_OK)
+		return status;
 
-    outCollection = new Collection(archive);
-    outCollection->SetFileName(fileName);
-    return B_OK;
+	outCollection = new Collection(archive);
+	outCollection->SetFileName(fileName);
+	return B_OK;
 }
 
 
 status_t
 MainWindow::_SaveCollectionsIndex()
 {
-    BPath dirPath;
-    status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &dirPath);
-    if (status != B_OK)
-        return status;
-    status = dirPath.Append(kSettingsDirName);
-    if (status != B_OK)
-        return status;
+	BPath dirPath;
+	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &dirPath);
+	if (status != B_OK)
+		return status;
+	status = dirPath.Append(kSettingsDirName);
+	if (status != B_OK)
+		return status;
 
-    BPath indexPath(dirPath);
-    status = indexPath.Append(kCollectionsIndexFileName);
-    if (status != B_OK)
-        return status;
+	BPath indexPath(dirPath);
+	status = indexPath.Append(kCollectionsIndexFileName);
+	if (status != B_OK)
+		return status;
 
-    BFile file;
-    status = file.SetTo(indexPath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
-    if (status != B_OK)
-        return status;
+	BFile file;
+	status = file.SetTo(indexPath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+	if (status != B_OK)
+		return status;
 
 	BMessage index;
 	for (int32 i = 0; i < fCollections.CountItems(); i++)
-        index.AddString("fileName", fCollections.ItemAt(i)->FileName());
+		index.AddString("fileName", fCollections.ItemAt(i)->FileName());
 
 	if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems())
 		index.AddString("activeFileName", fCollections.ItemAt(fActiveCollectionIndex)->FileName());
@@ -1591,38 +1413,39 @@ MainWindow::_SaveCollectionsIndex()
 	return index.Flatten(&file);
 }
 
+
 status_t
 MainWindow::_LoadCollectionsIndex()
 {
-    BPath dirPath;
-    status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &dirPath);
-    if (status != B_OK)
-        return status;
-    status = dirPath.Append(kSettingsDirName);
-    if (status != B_OK)
-        return status;
+	BPath dirPath;
+	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &dirPath);
+	if (status != B_OK)
+		return status;
+	status = dirPath.Append(kSettingsDirName);
+	if (status != B_OK)
+		return status;
 
-    BPath indexPath(dirPath);
-    status = indexPath.Append(kCollectionsIndexFileName);
-    if (status != B_OK)
-        return status;
+	BPath indexPath(dirPath);
+	status = indexPath.Append(kCollectionsIndexFileName);
+	if (status != B_OK)
+		return status;
 
-    BFile file;
-    status = file.SetTo(indexPath.Path(), B_READ_ONLY);
-    if (status != B_OK)
-        return B_OK;   // no index yet (first run)
+	BFile file;
+	status = file.SetTo(indexPath.Path(), B_READ_ONLY);
+	if (status != B_OK)
+		return B_OK; // no index yet (first run)
 
-    BMessage index;
-    status = index.Unflatten(&file);
-    if (status != B_OK)
-        return status;
+	BMessage index;
+	status = index.Unflatten(&file);
+	if (status != B_OK)
+		return status;
 
-    BString fileName;
-    for (int32 i = 0; index.FindString("fileName", i, &fileName) == B_OK; i++) {
-        Collection* collection = nullptr;
-        if (_LoadCollection(fileName, collection) == B_OK)
-            fCollections.AddItem(collection);
-    }
+	BString fileName;
+	for (int32 i = 0; index.FindString("fileName", i, &fileName) == B_OK; i++) {
+		Collection* collection = nullptr;
+		if (_LoadCollection(fileName, collection) == B_OK)
+			fCollections.AddItem(collection);
+	}
 
 	fActiveCollectionIndex = -1; // default: none, if nothing matches
 
@@ -1638,43 +1461,46 @@ MainWindow::_LoadCollectionsIndex()
 
 	_RefreshCollectionMenu();
 
-    return B_OK;
+	return B_OK;
 }
 
 
 void
 MainWindow::_RefreshCollectionMenu()
 {
-    for (int32 i = fCollectionMenu->CountItems() - 1; i >= 0; i--)
-        delete fCollectionMenu->RemoveItem(i);
+	for (int32 i = fCollectionMenu->CountItems() - 1; i >= 0; i--)
+		delete fCollectionMenu->RemoveItem(i);
 
-    for (int32 i = 0; i < fCollections.CountItems(); i++) {
-        BMessage* msg = new BMessage(M_SELECT_COLLECTION);
-        msg->AddInt32("index", i);
-        BMenuItem* item = new BMenuItem(fCollections.ItemAt(i)->Name().String(), msg);
-        fCollectionMenu->AddItem(item);
-        if (i == fActiveCollectionIndex)
-            item->SetMarked(true);
-    }
-    fCollectionMenu->SetTargetForItems(this);
+	for (int32 i = 0; i < fCollections.CountItems(); i++) {
+		BMessage* msg = new BMessage(M_SELECT_COLLECTION);
+		msg->AddInt32("index", i);
+		BMenuItem* item = new BMenuItem(fCollections.ItemAt(i)->Name().String(), msg);
+		fCollectionMenu->AddItem(item);
+		if (i == fActiveCollectionIndex)
+			item->SetMarked(true);
+	}
+	fCollectionMenu->SetTargetForItems(this);
 
-    if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems())
-        fCollectionMenuField->MenuItem()->SetLabel(fCollections.ItemAt(fActiveCollectionIndex)->Name().String());
-    else
-        fCollectionMenuField->MenuItem()->SetLabel("(no collections)");
+	if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems()) {
+		fCollectionMenuField->MenuItem()->SetLabel(
+			fCollections.ItemAt(fActiveCollectionIndex)->Name().String());
+	} else {
+		fCollectionMenuField->MenuItem()->SetLabel("(no collections)");
+	}
 
-    fDeleteCollectionButton->SetEnabled(fActiveCollectionIndex >= 0);
+	fDeleteCollectionButton->SetEnabled(fActiveCollectionIndex >= 0);
 }
+
 
 void
 MainWindow::_RefreshCollectionItemList()
 {
-    fCollectionListView->MakeEmpty();
+	fCollectionListView->MakeEmpty();
 
-    if (fActiveCollectionIndex < 0 || fActiveCollectionIndex >= fCollections.CountItems())
-        return;
+	if (fActiveCollectionIndex < 0 || fActiveCollectionIndex >= fCollections.CountItems())
+		return;
 
-    Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-    for (int32 i = 0; i < collection->CountItems(); i++)
+	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+	for (int32 i = 0; i < collection->CountItems(); i++)
 		fCollectionListView->AddItem(new BStringItem(collection->ItemAt(i)->Text()));
 }

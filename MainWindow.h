@@ -6,6 +6,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "AuthPanel.h"
 #include "Collection.h"
 #include "HistoryItem.h"
 #include <optional>
@@ -86,18 +87,7 @@ private:
 	BButton*          	fParamAddButton;
 	BButton*          	fParamRemoveButton;
 
-	BRadioButton*   	fAuthNoneRadio;
-	BRadioButton*   	fAuthBasicRadio;
-	BRadioButton*   	fAuthBearerRadio;
-	BRadioButton*   	fAuthApiKeyRadio;
-
-	BCardLayout*    	fAuthCardLayout;
-
-	BTextControl*   	fAuthUsernameField;
-	BTextControl*   	fAuthPasswordField;
-	BTextControl*   	fAuthTokenField;
-	BTextControl*   	fAuthApiKeyNameField;
-	BTextControl*   	fAuthApiKeyValueField;
+	AuthPanel*			fAuthPanel;
 
 	BTabView*        fSidebarTabs;
 
@@ -116,9 +106,6 @@ private:
 	void _LoadRequestData(const RequestData& data);
 	void _UpdateHistoryButtons();
 	void _UpdatePreview();
-	void _ApplyAuth(BHttpFields& fields);
-	BString _CurrentAuthType() const;
-	BMessage _CurrentAuthValues() const;
 
 	status_t _CollectionsDirectory(BPath& path);
 	status_t _SaveCollection(Collection* collection);
