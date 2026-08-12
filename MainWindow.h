@@ -8,7 +8,7 @@
 
 #include "AuthPanel.h"
 #include "Collection.h"
-#include "HistoryItem.h"
+#include "ParamsPanel.h"
 #include <optional>
 
 #include <ColumnListView.h>
@@ -48,8 +48,6 @@ private:
 	BMenuBar*			_BuildMenu();
 	void        		_BuildLayout();
 	BView* 				_BuildRequestPanel();
-	BView* 				_BuildAuthPanel();
-	BView* 				_BuildParamsPanel();
 	BView* 				_BuildPreviewPanel();
 	BView* 				_BuildResponsePanel();
 	BView* 				_BuildHistoryPanel();
@@ -81,12 +79,8 @@ private:
 
 	BTabView*        	fBodyTabView;
 	BTabView*			fResponseTabView;
-	BColumnListView*  	fParamsList;
-	BTextControl*     	fParamKeyField;
-	BTextControl*     	fParamValueField;
-	BButton*          	fParamAddButton;
-	BButton*          	fParamRemoveButton;
 
+	ParamsPanel*		fParamsPanel;
 	AuthPanel*			fAuthPanel;
 
 	BTabView*        fSidebarTabs;

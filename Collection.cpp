@@ -23,7 +23,7 @@ Collection::Collection(const BMessage& archive)
     archive.FindString("name", &fName);
 
     BMessage itemArchive;
-    for (int32 i = 0; archive.FindMessage("item", i, &itemArchive) == B_OK; i++) {
+    for (int32 i = 0; archive.FindMessage("item", i, &itemArchive) == B_OK; ++i) {
         fItems.AddItem(new CollectionItem(itemArchive));
         itemArchive.MakeEmpty();
     }
@@ -38,7 +38,7 @@ Collection::Archive(BMessage& archive) const
 {
     archive.AddString("name", fName);
 
-    for (int32 i = 0; i < fItems.CountItems(); i++) {
+    for (int32 i = 0; i < fItems.CountItems(); ++i) {
         BMessage itemArchive;
         fItems.ItemAt(i)->Archive(itemArchive);
         archive.AddMessage("item", &itemArchive);

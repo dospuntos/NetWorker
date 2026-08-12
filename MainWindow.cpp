@@ -6,6 +6,7 @@
 #include "MainWindow.h"
 #include "Collection.h"
 #include "Constants.h"
+#include "HistoryItem.h"
 #include "IconMenuItem.h"
 #include "RenameWindow.h"
 
@@ -190,6 +191,9 @@ MainWindow::~MainWindow()
 	if (fCurrentResult.has_value())
 		fSession.Cancel(fCurrentResult.value());
 
+	delete fAuthPanel;
+	delete fParamsPanel;
+
 	_SaveSettings();
 }
 
@@ -286,47 +290,18 @@ MainWindow::MessageReceived(BMessage* message)
 		}
 
 		case M_ADD_PARAMETER:
-		{
-			BString key = fParamKeyField->Text();
-			BString value = fParamValueField->Text();
-			if (key.Length() == 0)
-				break;
-
-			BRow* row = new BRow();
-			row->SetField(new BStringField(key.String()), 0);
-			row->SetField(new BStringField(value.String()), 1);
-			fParamsList->AddRow(row);
-
-			fParamKeyField->SetText("");
-			fParamValueField->SetText("");
-
+			fParamsPanel->AddCurrentFields();
 			_UpdatePreview();
 			break;
-		}
 
 		case M_REMOVE_PARAMETER:
-		{
-			BRow* selected = fParamsList->CurrentSelection();
-			if (selected != nullptr)
-				fParamsList->RemoveRow(selected);
-
+			fParamsPanel->RemoveSelected();
 			_UpdatePreview();
 			break;
-		}
 
 		case M_SELECT_PARAMETER:
-		{
-			BRow* selected = fParamsList->CurrentSelection();
-			if (selected != nullptr) {
-				auto* keyField = static_cast<BStringField*>(selected->GetField(0));
-				auto* valField = static_cast<BStringField*>(selected->GetField(1));
-				fParamKeyField->SetText(keyField->String());
-				fParamValueField->SetText(valField->String());
-			}
-
-			_UpdatePreview();
+			fParamsPanel->LoadSelectedIntoFields();
 			break;
-		}
 
 		case M_AUTH_TYPE_CHANGED:
 		{
@@ -367,7 +342,7 @@ MainWindow::MessageReceived(BMessage* message)
 		{
 			BList selectedItems;
 			int32 index;
-			for (int32 i = 0; (index = fHistoryPanel->CurrentSelection(i)) >= 0; i++)
+			for (int32 i = 0; (index = fHistoryPanel->CurrentSelection(i)) >= 0; ++i)
 				selectedItems.AddItem((void*)(addr_t)index);
 
 			if (selectedItems.CountItems() == 0)
@@ -555,16 +530,7 @@ MainWindow::MessageReceived(BMessage* message)
 			BString urlText(fUrlField->Text());
 			BString bodyText(fRequestBodyView->Text());
 
-			BMessage params;
-			for (int32 i = 0; i < fParamsList->CountRows(); i++) {
-				BRow* row = fParamsList->RowAt(i);
-				auto* keyField = static_cast<BStringField*>(row->GetField(0));
-				auto* valField = static_cast<BStringField*>(row->GetField(1));
-				BMessage param;
-				param.AddString("key", keyField->String());
-				param.AddString("value", valField->String());
-				params.AddMessage("param", &param);
-			}
+			BMessage params = fParamsPanel->CurrentParams();
 
 			RequestData data(method, urlText, bodyText, params, fAuthPanel->CurrentType(),
 				fAuthPanel->CurrentValues());
@@ -747,33 +713,6 @@ MainWindow::_BuildMenu()
 
 
 BView*
-MainWindow::_BuildParamsPanel()
-{
-	fParamsList = new BColumnListView("paramsList", B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE,
-		B_FANCY_BORDER);
-	fParamsList->AddColumn(new BStringColumn("Key", 180, 80, 400, 0), 0);
-	fParamsList->AddColumn(new BStringColumn("Value", 300, 80, 2000, 0), 1);
-	fParamsList->SetInvocationMessage(
-		new BMessage(M_SELECT_PARAMETER)); // double-click to load into fields for editing
-
-	fParamKeyField = new BTextControl("paramKey", "Key", "", nullptr);
-	fParamValueField = new BTextControl("paramValue", "Value", "", nullptr);
-	fParamAddButton = new BButton("paramAdd", "Add", new BMessage(M_ADD_PARAMETER));
-	fParamRemoveButton = new BButton("paramRemove", "Remove", new BMessage(M_REMOVE_PARAMETER));
-
-	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-		.Add(fParamsList)
-		.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
-			.Add(fParamKeyField)
-			.Add(fParamValueField)
-			.Add(fParamAddButton)
-			.Add(fParamRemoveButton)
-			.End()
-		.View();
-}
-
-
-BView*
 MainWindow::_BuildPreviewPanel()
 {
 	fPreviewPanel = new BTextView("previewPanel");
@@ -826,19 +765,21 @@ MainWindow::_BuildRequestPanel()
 							   .Add(fSaveButton)
 							   .View();
 
-	// Request body (Raw tab)
+	// Request tabs
 	fRequestBodyView = new PreviewTextView("requestBody");
 	fRequestBodyScroll = new BScrollView("requestBodyScroll", fRequestBodyView,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 
-	BView* paramsPanel = _BuildParamsPanel();
+	fParamsPanel = new ParamsPanel();
+	fParamsPanel->SetTarget(this);
+
 	fAuthPanel = new AuthPanel();
 	fAuthPanel->SetTarget(this, M_AUTH_TYPE_CHANGED);
 
 	fBodyTabView = new PreviewTabView("bodyTabs");
 	fBodyTabView->AddTab(fRequestBodyScroll);
 	fBodyTabView->TabAt(0)->SetLabel("Raw");
-	fBodyTabView->AddTab(paramsPanel);
+	fBodyTabView->AddTab(fParamsPanel->View());
 	fBodyTabView->TabAt(1)->SetLabel("Form");
 	fBodyTabView->AddTab(fAuthPanel->View());
 	fBodyTabView->TabAt(2)->SetLabel("Authorization");
@@ -1007,19 +948,7 @@ MainWindow::_SendRequest()
 	request.SetMethod(BHttpMethod(method.String()));
 
 	if (fBodyTabView->Selection() == 1) { // Form
-		fPendingRequestBody = "";
-		for (int32 i = 0; i < fParamsList->CountRows(); ++i) {
-			BRow* row = fParamsList->RowAt(i);
-			auto* keyField = static_cast<BStringField*>(row->GetField(0));
-			auto* valField = static_cast<BStringField*>(row->GetField(1));
-
-			if (i > 0)
-				fPendingRequestBody << "&";
-
-			BString key = keyField->String();
-			BString value = valField->String();
-			fPendingRequestBody << BUrl::UrlEncode(key) << "=" << BUrl::UrlEncode(value);
-		}
+		fPendingRequestBody = fParamsPanel->FormEncodedParams();
 
 		if (fPendingRequestBody.Length() > 0 && method != "GET" && method != "HEAD") {
 			request.SetRequestBody(std::make_unique<BMemoryIO>(fPendingRequestBody.String(),
@@ -1036,17 +965,7 @@ MainWindow::_SendRequest()
 	}
 
 	// Add to history
-	BMessage params;
-	for (int32 i = 0; i < fParamsList->CountRows(); ++i) {
-		BRow* row = fParamsList->RowAt(i);
-		auto* keyField = static_cast<BStringField*>(row->GetField(0));
-		auto* valField = static_cast<BStringField*>(row->GetField(1));
-
-		BMessage param;
-		param.AddString("key", keyField->String());
-		param.AddString("value", valField->String());
-		params.AddMessage("param", &param);
-	}
+	BMessage params = fParamsPanel->CurrentParams();
 
 	BHttpFields requestFields;
 	fAuthPanel->ApplyTo(requestFields);
@@ -1057,7 +976,7 @@ MainWindow::_SendRequest()
 		fAuthPanel->CurrentType(), fAuthPanel->CurrentValues());
 	HistoryItem* newItem = new HistoryItem(data);
 
-	for (int32 i = 0; i < fHistoryPanel->CountItems(); i++) {
+	for (int32 i = 0; i < fHistoryPanel->CountItems(); ++i) {
 		auto* existing = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(i));
 		if (existing->Equals(*newItem)) {
 			newItem->SetCustomLabel(existing->fCustomLabel);
@@ -1207,7 +1126,7 @@ MainWindow::_LoadRequestData(const RequestData& data)
 	fUrlField->SetText(data.fUrl.String());
 	fRequestBodyView->SetText(data.fBody.String());
 
-	for (int32 i = 0; i < fMethodMenu->CountItems(); i++) {
+	for (int32 i = 0; i < fMethodMenu->CountItems(); ++i) {
 		BMenuItem* mi = fMethodMenu->ItemAt(i);
 		if (data.fMethod == mi->Label()) {
 			mi->SetMarked(true);
@@ -1215,20 +1134,7 @@ MainWindow::_LoadRequestData(const RequestData& data)
 		}
 	}
 
-	fParamsList->Clear();
-	BMessage param;
-	for (int32 i = 0; data.fParams.FindMessage("param", i, &param) == B_OK; i++) {
-		BString key, value;
-		param.FindString("key", &key);
-		param.FindString("value", &value);
-
-		BRow* row = new BRow();
-		row->SetField(new BStringField(key.String()), 0);
-		row->SetField(new BStringField(value.String()), 1);
-		fParamsList->AddRow(row);
-
-		param.MakeEmpty();
-	}
+	fParamsPanel->LoadFrom(data.fParams);
 
 	BString username, password, token, headerName, headerValue;
 	data.fAuthValues.FindString("username", &username);
@@ -1274,19 +1180,7 @@ MainWindow::_UpdatePreview()
 
 	if (fBodyTabView->Selection() == 1) {
 		// Form mode
-		BString encoded;
-		for (int32 i = 0; i < fParamsList->CountRows(); i++) {
-			BRow* row = fParamsList->RowAt(i);
-			auto* keyField = static_cast<BStringField*>(row->GetField(0));
-			auto* valField = static_cast<BStringField*>(row->GetField(1));
-
-			if (i > 0)
-				encoded << "&";
-
-			BString key = keyField->String();
-			BString value = valField->String();
-			encoded << BUrl::UrlEncode(key) << "=" << BUrl::UrlEncode(value);
-		}
+		BString encoded = fParamsPanel->FormEncodedParams();
 
 		if (encoded.Length() > 0 && method != "GET" && method != "HEAD") {
 			preview << "Content-Type: application/x-www-form-urlencoded\n";
@@ -1404,7 +1298,7 @@ MainWindow::_SaveCollectionsIndex()
 		return status;
 
 	BMessage index;
-	for (int32 i = 0; i < fCollections.CountItems(); i++)
+	for (int32 i = 0; i < fCollections.CountItems(); ++i)
 		index.AddString("fileName", fCollections.ItemAt(i)->FileName());
 
 	if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems())
@@ -1441,7 +1335,7 @@ MainWindow::_LoadCollectionsIndex()
 		return status;
 
 	BString fileName;
-	for (int32 i = 0; index.FindString("fileName", i, &fileName) == B_OK; i++) {
+	for (int32 i = 0; index.FindString("fileName", i, &fileName) == B_OK; ++i) {
 		Collection* collection = nullptr;
 		if (_LoadCollection(fileName, collection) == B_OK)
 			fCollections.AddItem(collection);
@@ -1451,7 +1345,7 @@ MainWindow::_LoadCollectionsIndex()
 
 	BString activeFileName;
 	if (index.FindString("activeFileName", &activeFileName) == B_OK) {
-		for (int32 i = 0; i < fCollections.CountItems(); i++) {
+		for (int32 i = 0; i < fCollections.CountItems(); ++i) {
 			if (fCollections.ItemAt(i)->FileName() == activeFileName) {
 				fActiveCollectionIndex = i;
 				break;
@@ -1471,7 +1365,7 @@ MainWindow::_RefreshCollectionMenu()
 	for (int32 i = fCollectionMenu->CountItems() - 1; i >= 0; i--)
 		delete fCollectionMenu->RemoveItem(i);
 
-	for (int32 i = 0; i < fCollections.CountItems(); i++) {
+	for (int32 i = 0; i < fCollections.CountItems(); ++i) {
 		BMessage* msg = new BMessage(M_SELECT_COLLECTION);
 		msg->AddInt32("index", i);
 		BMenuItem* item = new BMenuItem(fCollections.ItemAt(i)->Name().String(), msg);
@@ -1501,6 +1395,6 @@ MainWindow::_RefreshCollectionItemList()
 		return;
 
 	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-	for (int32 i = 0; i < collection->CountItems(); i++)
+	for (int32 i = 0; i < collection->CountItems(); ++i)
 		fCollectionListView->AddItem(new BStringItem(collection->ItemAt(i)->Text()));
 }
