@@ -3,8 +3,8 @@
  * All rights reserved. Distributed under the terms of the MIT license.
  */
 
-#include "ParamsPanel.h"
-#include "Constants.h"
+
+#include "KeyValueEditor.h"
 
 #include <Button.h>
 #include <ColumnListView.h>
@@ -14,17 +14,17 @@
 #include <Url.h>
 
 
-ParamsPanel::ParamsPanel()
+KeyValueEditor::KeyValueEditor(const char* keyLabel, const char* valueLabel)
 {
-	fList = new BColumnListView("paramsList", B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE,
-		B_FANCY_BORDER);
-	fList->AddColumn(new BStringColumn("Key", 180, 80, 400, 0), 0);
-	fList->AddColumn(new BStringColumn("Value", 300, 80, 2000, 0), 1);
+	fList
+		= new BColumnListView("kvList", B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE, B_FANCY_BORDER);
+	fList->AddColumn(new BStringColumn(keyLabel, 180, 80, 400, 0), 0);
+	fList->AddColumn(new BStringColumn(valueLabel, 300, 80, 2000, 0), 1);
 
-	fKeyField = new BTextControl("paramKey", "Key", "", nullptr);
-	fValueField = new BTextControl("paramValue", "Value", "", nullptr);
-	fAddButton = new BButton("paramAdd", "Add", nullptr);
-	fRemoveButton = new BButton("paramRemove", "Remove", nullptr);
+	fKeyField = new BTextControl("kvKey", keyLabel, "", nullptr);
+	fValueField = new BTextControl("kvValue", valueLabel, "", nullptr);
+	fAddButton = new BButton("kvAdd", "Add", nullptr);
+	fRemoveButton = new BButton("kvRemove", "Remove", nullptr);
 
 	fView = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 				.Add(fList)
@@ -39,21 +39,21 @@ ParamsPanel::ParamsPanel()
 
 
 void
-ParamsPanel::SetTarget(BHandler* target)
+KeyValueEditor::SetTarget(BHandler* target, uint32 addWhat, uint32 removeWhat, uint32 selectWhat)
 {
-	fList->SetInvocationMessage(new BMessage(M_SELECT_PARAMETER));
+	fList->SetInvocationMessage(new BMessage(selectWhat));
 	fList->SetTarget(target);
 
-	fAddButton->SetMessage(new BMessage(M_ADD_PARAMETER));
+	fAddButton->SetMessage(new BMessage(addWhat));
 	fAddButton->SetTarget(target);
 
-	fRemoveButton->SetMessage(new BMessage(M_REMOVE_PARAMETER));
+	fRemoveButton->SetMessage(new BMessage(removeWhat));
 	fRemoveButton->SetTarget(target);
 }
 
 
 void
-ParamsPanel::AddCurrentFields()
+KeyValueEditor::AddCurrentFields()
 {
 	BString key(fKeyField->Text());
 	BString value(fValueField->Text());
@@ -71,7 +71,7 @@ ParamsPanel::AddCurrentFields()
 
 
 void
-ParamsPanel::RemoveSelected()
+KeyValueEditor::RemoveSelected()
 {
 	BRow* selected = fList->CurrentSelection();
 	if (selected != nullptr)
@@ -80,7 +80,7 @@ ParamsPanel::RemoveSelected()
 
 
 void
-ParamsPanel::LoadSelectedIntoFields()
+KeyValueEditor::LoadSelectedIntoFields()
 {
 	BRow* selected = fList->CurrentSelection();
 	if (selected == nullptr)
@@ -94,58 +94,58 @@ ParamsPanel::LoadSelectedIntoFields()
 
 
 BMessage
-ParamsPanel::CurrentParams() const
+KeyValueEditor::CurrentValues() const
 {
-	BMessage params;
-	for (int32 i = 0; i < fList->CountRows(); ++i) {
+	BMessage values;
+	for (int32 i = 0; i < fList->CountRows(); i++) {
 		BRow* row = fList->RowAt(i);
 		auto* keyField = static_cast<BStringField*>(row->GetField(0));
 		auto* valField = static_cast<BStringField*>(row->GetField(1));
 
-		BMessage param;
-		param.AddString("key", keyField->String());
-		param.AddString("value", valField->String());
-		params.AddMessage("param", &param);
+		BMessage entry;
+		entry.AddString("key", keyField->String());
+		entry.AddString("value", valField->String());
+		values.AddMessage("param", &entry);
 	}
-	return params;
+	return values;
 }
 
 
 BString
-ParamsPanel::FormEncodedParams() const
+KeyValueEditor::FormEncodedValues() const
 {
-	BString result;
+	BString values;
 	for (int32 i = 0; i < fList->CountRows(); ++i) {
 		BRow* row = fList->RowAt(i);
 		auto* keyField = static_cast<BStringField*>(row->GetField(0));
 		auto* valField = static_cast<BStringField*>(row->GetField(1));
 
-		if (result.Length() > 0)
-			result << "&";
+		if (values.Length() > 0)
+			values << "&";
 
-		result << BUrl::UrlEncode(keyField->String()) << "=" << BUrl::UrlEncode(valField->String());
+		values << BUrl::UrlEncode(keyField->String()) << "=" << BUrl::UrlEncode(valField->String());
 	}
 
-	return result;
+	return values;
 }
 
 
 void
-ParamsPanel::LoadFrom(const BMessage& params)
+KeyValueEditor::LoadFrom(const BMessage& values)
 {
 	fList->Clear();
 
-	BMessage param;
-	for (int32 i = 0; params.FindMessage("param", i, &param) == B_OK; ++i) {
+	BMessage entry;
+	for (int32 i = 0; values.FindMessage("param", i, &entry) == B_OK; i++) {
 		BString key, value;
-		param.FindString("key", &key);
-		param.FindString("value", &value);
+		entry.FindString("key", &key);
+		entry.FindString("value", &value);
 
 		BRow* row = new BRow();
 		row->SetField(new BStringField(key.String()), 0);
 		row->SetField(new BStringField(value.String()), 1);
 		fList->AddRow(row);
 
-		param.MakeEmpty();
+		entry.MakeEmpty();
 	}
 }

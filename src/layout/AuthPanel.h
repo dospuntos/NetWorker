@@ -6,13 +6,13 @@
 #ifndef AUTH_PANEL_H
 #define AUTH_PANEL_H
 
+#include "RadioCardGroup.h"
+
 #include <Message.h>
 #include <String.h>
 
 class BView;
 class BHandler;
-class BRadioButton;
-class BCardLayout;
 class BTextControl;
 
 namespace BPrivate {
@@ -26,7 +26,7 @@ class AuthPanel {
 public:
     AuthPanel();
 
-    BView* View() const { return fView; }
+    BView* View() const { return fRadioGroup->View(); }
 
     void SetTarget(BHandler* target, uint32 changedWhat);
     void UpdateVisibleCard();
@@ -36,17 +36,12 @@ public:
     void LoadFrom(const BString& type, const BMessage& values);
 
 private:
-    BView*        fView;
-    BRadioButton* fNoneRadio;
-    BRadioButton* fBasicRadio;
-    BRadioButton* fBearerRadio;
-    BRadioButton* fApiKeyRadio;
-    BCardLayout*  fCardLayout;
-    BTextControl* fUsernameField;
-    BTextControl* fPasswordField;
-    BTextControl* fTokenField;
-    BTextControl* fApiKeyNameField;
-    BTextControl* fApiKeyValueField;
+    RadioCardGroup* fRadioGroup;
+    BTextControl*   fUsernameField;
+    BTextControl*   fPasswordField;
+    BTextControl*   fTokenField;
+    BTextControl*   fApiKeyNameField;
+    BTextControl*   fApiKeyValueField;
 };
 
 #endif // AUTH_PANEL_H

@@ -4,12 +4,11 @@
  */
 
 #include "AuthPanel.h"
+#include "Constants.h"
 
-#include <CardLayout.h>
 #include <ControlLook.h>
 #include <HttpFields.h>
 #include <LayoutBuilder.h>
-#include <RadioButton.h>
 #include <TextControl.h>
 #include <TextView.h>
 #include <View.h>
@@ -52,102 +51,71 @@ Base64Encode(const BString& input)
 
 AuthPanel::AuthPanel()
 {
-	fNoneRadio = new BRadioButton("authNone", "None", nullptr);
-	fBasicRadio = new BRadioButton("authBasic", "Basic", nullptr);
-	fBearerRadio = new BRadioButton("authBearer", "Bearer token", nullptr);
-	fApiKeyRadio = new BRadioButton("authApiKey", "API key", nullptr);
-	fNoneRadio->SetValue(B_CONTROL_ON);
-
-	BView* typeRow = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
-						 .Add(fNoneRadio)
-						 .Add(fBasicRadio)
-						 .Add(fBearerRadio)
-						 .Add(fApiKeyRadio)
-						 .AddGlue()
-						 .View();
+	fRadioGroup = new RadioCardGroup();
 
 	BView* noneCard = new BView("authNoneCard", B_WILL_DRAW);
+	fRadioGroup->AddOption("None", noneCard); // index 0
 
 	fUsernameField = new BTextControl("authUsername", "Username", "", nullptr);
+	fUsernameField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	fPasswordField = new BTextControl("authPassword", "Password", "", nullptr);
+	fPasswordField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	fPasswordField->TextView()->HideTyping(true);
 	BView* basicCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 						   .Add(fUsernameField)
 						   .Add(fPasswordField)
 						   .AddGlue()
 						   .View();
+	fRadioGroup->AddOption("Basic", basicCard); // index 1
 
 	fTokenField = new BTextControl("authToken", "Token", "", nullptr);
+	fTokenField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	BView* bearerCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							.Add(fTokenField)
 							.AddGlue()
 							.View();
+	fRadioGroup->AddOption("Bearer token", bearerCard); // index 2
 
 	fApiKeyNameField = new BTextControl("authApiKeyName", "Header name", "", nullptr);
+	fApiKeyNameField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	fApiKeyValueField = new BTextControl("authApiKeyValue", "Value", "", nullptr);
+	fApiKeyValueField->SetModificationMessage(new BMessage(M_UPDATE_PREVIEW));
 	BView* apiKeyCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 							.Add(fApiKeyNameField)
 							.Add(fApiKeyValueField)
 							.AddGlue()
 							.View();
-
-	BView* cardsView = new BView("authCards", 0);
-	fCardLayout = new BCardLayout();
-	cardsView->SetLayout(fCardLayout);
-	fCardLayout->AddView(noneCard);
-	fCardLayout->AddView(basicCard);
-	fCardLayout->AddView(bearerCard);
-	fCardLayout->AddView(apiKeyCard);
-	fCardLayout->SetVisibleItem((int32)0);
-
-	fView = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-				.SetInsets(B_USE_WINDOW_INSETS)
-				.Add(typeRow)
-				.Add(cardsView)
-				.View();
+	fRadioGroup->AddOption("API key", apiKeyCard); // index 3
 }
 
 
 void
 AuthPanel::SetTarget(BHandler* target, uint32 changedWhat)
 {
-	fNoneRadio->SetTarget(target);
-	fBasicRadio->SetTarget(target);
-	fBearerRadio->SetTarget(target);
-	fApiKeyRadio->SetTarget(target);
-
-	fNoneRadio->SetMessage(new BMessage(changedWhat));
-	fBasicRadio->SetMessage(new BMessage(changedWhat));
-	fBearerRadio->SetMessage(new BMessage(changedWhat));
-	fApiKeyRadio->SetMessage(new BMessage(changedWhat));
+	fRadioGroup->SetTarget(target, changedWhat);
 }
 
 
 void
 AuthPanel::UpdateVisibleCard()
 {
-	int32 index = 0;
-	if (fBasicRadio->Value() == B_CONTROL_ON)
-		index = 1;
-	else if (fBearerRadio->Value() == B_CONTROL_ON)
-		index = 2;
-	else if (fApiKeyRadio->Value() == B_CONTROL_ON)
-		index = 3;
-
-	fCardLayout->SetVisibleItem(index);
+	fRadioGroup->UpdateVisibleCard();
 }
 
 
 BString
 AuthPanel::CurrentType() const
 {
-	if (fBasicRadio->Value() == B_CONTROL_ON)
-		return "basic";
-	if (fBearerRadio->Value() == B_CONTROL_ON)
-		return "bearer";
-	if (fApiKeyRadio->Value() == B_CONTROL_ON)
-		return "apikey";
-	return "none";
+	switch (fRadioGroup->SelectedIndex()) {
+		case 1:
+			return "basic";
+		case 2:
+			return "bearer";
+		case 3:
+			return "apikey";
+		default:
+			return "none";
+	}
 }
 
 
@@ -192,7 +160,7 @@ AuthPanel::ApplyTo(BHttpFields& fields) const
 	} else if (type == "apikey") {
 		BString name(fApiKeyNameField->Text());
 		BString value(fApiKeyValueField->Text());
-		if (name.Length() > 0)
+		if (name.Length() > 0 && value.Length() > 0)
 			fields.AddField(name.String(), value.String());
 	}
 }
@@ -214,14 +182,13 @@ AuthPanel::LoadFrom(const BString& type, const BMessage& values)
 	fApiKeyNameField->SetText(headerName.String());
 	fApiKeyValueField->SetText(headerValue.String());
 
+	int32 index = 0;
 	if (type == "basic")
-		fBasicRadio->SetValue(B_CONTROL_ON);
+		index = 1;
 	else if (type == "bearer")
-		fBearerRadio->SetValue(B_CONTROL_ON);
+		index = 2;
 	else if (type == "apikey")
-		fApiKeyRadio->SetValue(B_CONTROL_ON);
-	else
-		fNoneRadio->SetValue(B_CONTROL_ON);
+		index = 3;
 
-	UpdateVisibleCard();
+	fRadioGroup->SetSelectedIndex(index);
 }

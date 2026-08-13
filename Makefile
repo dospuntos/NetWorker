@@ -36,10 +36,12 @@ SRCS =  src/App.cpp \
 		src/RequestData.cpp \
 		src/Collection.cpp \
 		src/CollectionItem.cpp \
+		src/layout/BodyPanel.cpp \
+		src/layout/KeyValueEditor.cpp \
+		src/layout/RadioCardGroup.cpp \
 		src/layout/IconMenuItem.cpp \
 		src/layout/RenameWindow.cpp \
 		src/layout/AuthPanel.cpp \
-		src/layout/ParamsPanel.cpp
 
 #	Specify the resource definition files to use. Full or relative paths can be
 #	used.

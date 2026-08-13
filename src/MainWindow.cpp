@@ -55,28 +55,6 @@ static const char* kMethods[]
 
 namespace {
 
-class PreviewTextView : public BTextView {
-
-	public:
-		PreviewTextView(const char* name) : BTextView(name) {}
-
-		void InsertText(const char* text, int32 length, int32 offset,
-			const text_run_array* runs) override
-		{
-			BTextView::InsertText(text, length, offset, runs);
-			if (Window())
-				Window()->PostMessage(M_UPDATE_PREVIEW);
-		}
-
-		void DeleteText(int32 start, int32 finish) override
-		{
-			BTextView::DeleteText(start, finish);
-			if (Window())
-				Window()->PostMessage(M_UPDATE_PREVIEW);
-		}
-};
-
-
 class PreviewTabView : public BTabView {
 	public:
 		PreviewTabView(const char* name) : BTabView(name) {}
@@ -192,7 +170,7 @@ MainWindow::~MainWindow()
 		fSession.Cancel(fCurrentResult.value());
 
 	delete fAuthPanel;
-	delete fParamsPanel;
+	delete fBodyPanel;
 
 	_SaveSettings();
 }
@@ -289,19 +267,20 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
-		case M_ADD_PARAMETER:
-			fParamsPanel->AddCurrentFields();
+		case M_FORM_PARAM_ADD:
+			fBodyPanel->FormEditor()->AddCurrentFields();
 			_UpdatePreview();
 			break;
 
-		case M_REMOVE_PARAMETER:
-			fParamsPanel->RemoveSelected();
+		case M_FORM_PARAM_REMOVE:
+			fBodyPanel->FormEditor()->RemoveSelected();
 			_UpdatePreview();
 			break;
 
-		case M_SELECT_PARAMETER:
-			fParamsPanel->LoadSelectedIntoFields();
+		case M_FORM_PARAM_SELECT:
+			fBodyPanel->FormEditor()->LoadSelectedIntoFields();
 			break;
+
 
 		case M_AUTH_TYPE_CHANGED:
 		{
@@ -317,10 +296,9 @@ MainWindow::MessageReceived(BMessage* message)
 			bool bodyAllowed = (method != "GET" && method != "HEAD");
 
 			fBodyTabView->TabAt(0)->SetEnabled(bodyAllowed); // Raw
-			fBodyTabView->TabAt(1)->SetEnabled(bodyAllowed); // Form
 
-			if (!bodyAllowed && fBodyTabView->Selection() < 2)
-				fBodyTabView->Select(2); // jump to Authorization tab
+			if (!bodyAllowed && fBodyTabView->Selection() < 1)
+				fBodyTabView->Select(1); // jump to Authorization tab
 
 			_UpdatePreview();
 			break;
@@ -528,11 +506,12 @@ MainWindow::MessageReceived(BMessage* message)
 			BMenuItem* marked = fMethodMenu->FindMarked();
 			BString method(marked ? marked->Label() : "GET");
 			BString urlText(fUrlField->Text());
-			BString bodyText(fRequestBodyView->Text());
+			BString bodyText(fBodyPanel->CurrentBody());
 
-			BMessage params = fParamsPanel->CurrentParams();
+			BMessage params = fBodyPanel->FormEditor()->CurrentValues();
 
-			RequestData data(method, urlText, bodyText, params, fAuthPanel->CurrentType(),
+			RequestData data(method, urlText, bodyText, params, fBodyPanel->CurrentMode(),
+				fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
 				fAuthPanel->CurrentValues());
 
 			collection->AddItem(new CollectionItem(data));
@@ -611,6 +590,22 @@ MainWindow::MessageReceived(BMessage* message)
 			delete removed;
 			_SaveCollection(collection);
 			_RefreshCollectionItemList();
+			break;
+		}
+
+		case M_BODY_MODE_CHANGED:
+			fBodyPanel->UpdateVisibleCard();
+			_UpdatePreview();
+			break;
+
+		case M_BODY_FILE_SELECTED:
+		{
+			entry_ref ref;
+			if (message->FindRef("refs", &ref) == B_OK) {
+				BPath path(&ref);
+				fBodyPanel->SetFilePath(path.Path());
+				_UpdatePreview();
+			}
 			break;
 		}
 
@@ -766,23 +761,18 @@ MainWindow::_BuildRequestPanel()
 							   .View();
 
 	// Request tabs
-	fRequestBodyView = new PreviewTextView("requestBody");
-	fRequestBodyScroll = new BScrollView("requestBodyScroll", fRequestBodyView,
-		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
-
-	fParamsPanel = new ParamsPanel();
-	fParamsPanel->SetTarget(this);
-
+	fBodyPanel = new BodyPanel();
+	fBodyPanel->SetTarget(this, M_BODY_MODE_CHANGED);
+	fBodyPanel->FormEditor()->SetTarget(this, M_FORM_PARAM_ADD, M_FORM_PARAM_REMOVE,
+		M_FORM_PARAM_SELECT);
 	fAuthPanel = new AuthPanel();
 	fAuthPanel->SetTarget(this, M_AUTH_TYPE_CHANGED);
 
 	fBodyTabView = new PreviewTabView("bodyTabs");
-	fBodyTabView->AddTab(fRequestBodyScroll);
-	fBodyTabView->TabAt(0)->SetLabel("Raw");
-	fBodyTabView->AddTab(fParamsPanel->View());
-	fBodyTabView->TabAt(1)->SetLabel("Form");
+	fBodyTabView->AddTab(fBodyPanel->View());
+	fBodyTabView->TabAt(0)->SetLabel("Body");
 	fBodyTabView->AddTab(fAuthPanel->View());
-	fBodyTabView->TabAt(2)->SetLabel("Authorization");
+	fBodyTabView->TabAt(1)->SetLabel("Authorization");
 
 	BView* bodyPanel = BLayoutBuilder::Group<>(B_VERTICAL)
 						   .SetInsets(B_USE_WINDOW_INSETS)
@@ -947,25 +937,19 @@ MainWindow::_SendRequest()
 	BHttpRequest request(url);
 	request.SetMethod(BHttpMethod(method.String()));
 
-	if (fBodyTabView->Selection() == 1) { // Form
-		fPendingRequestBody = fParamsPanel->FormEncodedParams();
+	BString mode = fBodyPanel->CurrentMode();
+	bool bodyAllowed = (method != "GET" && method != "HEAD" && mode != "none");
 
-		if (fPendingRequestBody.Length() > 0 && method != "GET" && method != "HEAD") {
-			request.SetRequestBody(std::make_unique<BMemoryIO>(fPendingRequestBody.String(),
-									   fPendingRequestBody.Length()),
-				"application/x-www-form-urlencoded", fPendingRequestBody.Length());
-		}
-	} else { // Raw text (expect JSON for now)
-		fPendingRequestBody = fRequestBodyView->Text();
-		if (fPendingRequestBody.Length() > 0 && method != "GET" && method != "HEAD") {
-			request.SetRequestBody(std::make_unique<BMemoryIO>(fPendingRequestBody.String(),
-									   fPendingRequestBody.Length()),
-				"application/json", fPendingRequestBody.Length());
+	if (bodyAllowed) {
+		BString body = fBodyPanel->CurrentBody();
+		if (body.Length() > 0) {
+			request.SetRequestBody(std::make_unique<BMemoryIO>(body.String(), body.Length()),
+				fBodyPanel->CurrentContentType().String(), body.Length());
 		}
 	}
 
 	// Add to history
-	BMessage params = fParamsPanel->CurrentParams();
+	BMessage params = fBodyPanel->FormEditor()->CurrentValues();
 
 	BHttpFields requestFields;
 	fAuthPanel->ApplyTo(requestFields);
@@ -973,7 +957,8 @@ MainWindow::_SendRequest()
 		request.SetFields(requestFields);
 
 	RequestData data(method, url.UrlString(), fPendingRequestBody, params,
-		fAuthPanel->CurrentType(), fAuthPanel->CurrentValues());
+		fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
+		fAuthPanel->CurrentValues());
 	HistoryItem* newItem = new HistoryItem(data);
 
 	for (int32 i = 0; i < fHistoryPanel->CountItems(); ++i) {
@@ -1124,7 +1109,7 @@ void
 MainWindow::_LoadRequestData(const RequestData& data)
 {
 	fUrlField->SetText(data.fUrl.String());
-	fRequestBodyView->SetText(data.fBody.String());
+	fBodyPanel->LoadFrom(data.fBodyMode, data.fBody, data.fParams, data.fFilePath);
 
 	for (int32 i = 0; i < fMethodMenu->CountItems(); ++i) {
 		BMenuItem* mi = fMethodMenu->ItemAt(i);
@@ -1133,8 +1118,6 @@ MainWindow::_LoadRequestData(const RequestData& data)
 			break;
 		}
 	}
-
-	fParamsPanel->LoadFrom(data.fParams);
 
 	BString username, password, token, headerName, headerValue;
 	data.fAuthValues.FindString("username", &username);
@@ -1178,25 +1161,15 @@ MainWindow::_UpdatePreview()
 				<< "\n";
 	}
 
-	if (fBodyTabView->Selection() == 1) {
-		// Form mode
-		BString encoded = fParamsPanel->FormEncodedParams();
+	BString mode = fBodyPanel->CurrentMode();
+	bool bodyAllowed = (method != "GET" && method != "HEAD" && mode != "none");
 
-		if (encoded.Length() > 0 && method != "GET" && method != "HEAD") {
-			preview << "Content-Type: application/x-www-form-urlencoded\n";
-			preview << "Content-Length: " << encoded.Length() << "\n\n";
-			preview << encoded;
-		} else {
-			preview << "\n";
-		}
-	} else {
-		BString bodyText(fRequestBodyView->Text());
-		if (bodyText.Length() > 0 && method != "GET" && method != "HEAD") {
-			preview << "Content-Type: application/json\n";
-			preview << "Content-Length: " << bodyText.Length() << "\n\n";
-			preview << bodyText;
-		} else {
-			preview << "\n";
+	if (bodyAllowed) {
+		BString body = fBodyPanel->CurrentBody();
+		if (body.Length() > 0) {
+			preview << "Content-Type: " << fBodyPanel->CurrentContentType() << "\n";
+			preview << "Content-Length: " << body.Length() << "\n\n";
+			preview << body;
 		}
 	}
 

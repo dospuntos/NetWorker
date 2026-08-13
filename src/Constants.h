@@ -25,9 +25,11 @@ enum {
 
 	M_SEND_REQUEST = 'send',
 	M_CLEAR_RESPONSE = 'clrr',
-	M_ADD_PARAMETER = 'padd',
-	M_REMOVE_PARAMETER = 'prem',
-	M_SELECT_PARAMETER = 'psel',
+	M_FORM_PARAM_ADD = 'fpad',
+	M_FORM_PARAM_REMOVE = 'fprm',
+	M_FORM_PARAM_SELECT = 'fpsl',
+	M_BODY_MODE_CHANGED = 'bmch',
+	M_BODY_FILE_SELECTED = 'bfsl',
 	M_AUTH_TYPE_CHANGED = 'auth',
 	M_SELECT_HISTORY = 'hsel',
 	M_DELETE_HISTORY_ITEM = 'dhis',
@@ -38,19 +40,19 @@ enum {
 	M_RENAME_HISTORY_ITEM = 'rnhi',
 	M_UPDATE_PREVIEW = 'upvw',
 
-	M_SELECT_COLLECTION           = 'scol',
-    M_NEW_COLLECTION              = 'ncol',
-    M_CREATE_COLLECTION           = 'crcl',
-    M_DELETE_COLLECTION           = 'dcol',
-    M_CONFIRM_DELETE_COLLECTION   = 'cdcl',
+	M_SELECT_COLLECTION = 'scol',
+	M_NEW_COLLECTION = 'ncol',
+	M_CREATE_COLLECTION = 'crcl',
+	M_DELETE_COLLECTION = 'dcol',
+	M_CONFIRM_DELETE_COLLECTION = 'cdcl',
 
-    M_SAVE_TO_COLLECTION          = 'stco',
-    M_CONFIRM_SAVE_TO_COLLECTION  = 'cstc',
+	M_SAVE_TO_COLLECTION = 'stco',
+	M_CONFIRM_SAVE_TO_COLLECTION = 'cstc',
 
-    M_LOAD_COLLECTION_ITEM        = 'lcit',
-    M_SHOW_RENAME_COLLECTION_ITEM = 'srci',
-    M_RENAME_COLLECTION_ITEM      = 'rnci',
-    M_DELETE_COLLECTION_ITEM      = 'dcit'
+	M_LOAD_COLLECTION_ITEM = 'lcit',
+	M_SHOW_RENAME_COLLECTION_ITEM = 'srci',
+	M_RENAME_COLLECTION_ITEM = 'rnci',
+	M_DELETE_COLLECTION_ITEM = 'dcit'
 };
 
 

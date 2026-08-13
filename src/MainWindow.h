@@ -7,8 +7,9 @@
 #define MAINWINDOW_H
 
 #include "AuthPanel.h"
+#include "BodyPanel.h"
 #include "Collection.h"
-#include "ParamsPanel.h"
+#include "KeyValueEditor.h"
 #include <optional>
 
 #include <ColumnListView.h>
@@ -61,8 +62,7 @@ private:
     BTextControl*       fUrlField;
     BButton*            fSendButton;
 	BButton*			fSaveButton;
-    BTextView*          fRequestBodyView;
-    BScrollView*        fRequestBodyScroll;
+	BodyPanel*			fBodyPanel;
 	BTextView*			fPreviewPanel;
 	BScrollView*		fPreviewPanelScroll;
     BStringView*        fStatusLabel;
@@ -80,7 +80,6 @@ private:
 	BTabView*        	fBodyTabView;
 	BTabView*			fResponseTabView;
 
-	ParamsPanel*		fParamsPanel;
 	AuthPanel*			fAuthPanel;
 
 	BTabView*        fSidebarTabs;

@@ -2,8 +2,8 @@
  * Copyright 2026, Johan Wagenheim
  * All rights reserved. Distributed under the terms of the MIT license.
  */
-#ifndef PARAMS_PANEL_H
-#define PARAMS_PANEL_H
+#ifndef KEY_VALUE_EDITOR_H
+#define KEY_VALUE_EDITOR_H
 
 #include <Message.h>
 #include <String.h>
@@ -15,20 +15,21 @@ class BColumnListView;
 class BTextControl;
 class BButton;
 
-class ParamsPanel {
+class KeyValueEditor {
 public:
-    ParamsPanel();
+    KeyValueEditor(const char* keyLabel = "Key", const char* valueLabel = "Value");
 
     BView* View() const { return fView; }
 
-    void SetTarget(BHandler* target);
+    void SetTarget(BHandler* target, uint32 addWhat, uint32 removeWhat, uint32 selectWhat);
+
     void AddCurrentFields();
     void RemoveSelected();
     void LoadSelectedIntoFields();
 
-    BMessage CurrentParams() const;
-	BString FormEncodedParams() const;
-    void LoadFrom(const BMessage& params);
+    BMessage CurrentValues() const;
+	BString FormEncodedValues() const;
+    void LoadFrom(const BMessage& values);
 
 private:
     BView*            fView;
@@ -39,4 +40,4 @@ private:
     BButton*          fRemoveButton;
 };
 
-#endif // PARAMS_PANEL_H
+#endif // KEY_VALUE_EDITOR_H
