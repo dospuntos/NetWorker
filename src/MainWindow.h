@@ -63,6 +63,7 @@ private:
     BButton*            fSendButton;
 	BButton*			fSaveButton;
 	BodyPanel*			fBodyPanel;
+	KeyValueEditor*     fQueryParamsEditor;
 	BTextView*			fPreviewPanel;
 	BScrollView*		fPreviewPanelScroll;
     BStringView*        fStatusLabel;
@@ -108,6 +109,7 @@ private:
 
 	void _RefreshCollectionMenu();
 	void _RefreshCollectionItemList();
+	BString _BuildFullUrl() const;
 };
 
 #endif

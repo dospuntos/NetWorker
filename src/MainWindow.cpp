@@ -281,6 +281,19 @@ MainWindow::MessageReceived(BMessage* message)
 			fBodyPanel->FormEditor()->LoadSelectedIntoFields();
 			break;
 
+		case M_QUERY_PARAM_ADD:
+			fQueryParamsEditor->AddCurrentFields();
+			_UpdatePreview();
+			break;
+
+		case M_QUERY_PARAM_REMOVE:
+			fQueryParamsEditor->RemoveSelected();
+			_UpdatePreview();
+			break;
+
+		case M_QUERY_PARAM_SELECT:
+			fQueryParamsEditor->LoadSelectedIntoFields();
+			break;
 
 		case M_AUTH_TYPE_CHANGED:
 		{
@@ -761,18 +774,24 @@ MainWindow::_BuildRequestPanel()
 							   .View();
 
 	// Request tabs
+	fQueryParamsEditor = new KeyValueEditor("Key", "Value");
+	fQueryParamsEditor->SetTarget(this, M_QUERY_PARAM_ADD, M_QUERY_PARAM_REMOVE, M_QUERY_PARAM_SELECT);
+
 	fBodyPanel = new BodyPanel();
 	fBodyPanel->SetTarget(this, M_BODY_MODE_CHANGED);
 	fBodyPanel->FormEditor()->SetTarget(this, M_FORM_PARAM_ADD, M_FORM_PARAM_REMOVE,
 		M_FORM_PARAM_SELECT);
+
 	fAuthPanel = new AuthPanel();
 	fAuthPanel->SetTarget(this, M_AUTH_TYPE_CHANGED);
 
 	fBodyTabView = new PreviewTabView("bodyTabs");
+	fBodyTabView->AddTab(fQueryParamsEditor->View());
+	fBodyTabView->TabAt(0)->SetLabel("Params");
 	fBodyTabView->AddTab(fBodyPanel->View());
-	fBodyTabView->TabAt(0)->SetLabel("Body");
+	fBodyTabView->TabAt(1)->SetLabel("Body");
 	fBodyTabView->AddTab(fAuthPanel->View());
-	fBodyTabView->TabAt(1)->SetLabel("Authorization");
+	fBodyTabView->TabAt(2)->SetLabel("Authorization");
 
 	BView* bodyPanel = BLayoutBuilder::Group<>(B_VERTICAL)
 						   .SetInsets(B_USE_WINDOW_INSETS)
@@ -925,7 +944,7 @@ MainWindow::_SendRequest()
 		fCurrentResult.reset();
 	}
 
-	BUrl url(fUrlField->Text(), false);
+	BUrl url(_BuildFullUrl(), false);
 	if (!url.IsValid()) {
 		fStatusLabel->SetText("Invalid URL");
 		return;
@@ -1143,7 +1162,7 @@ MainWindow::_UpdatePreview()
 {
 	BMenuItem* marked = fMethodMenu->FindMarked();
 	BString method(marked ? marked->Label() : "GET");
-	BString urlText(fUrlField->Text());
+	BString urlText = _BuildFullUrl();
 
 	BUrl url(urlText, false);
 
@@ -1370,4 +1389,20 @@ MainWindow::_RefreshCollectionItemList()
 	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
 	for (int32 i = 0; i < collection->CountItems(); ++i)
 		fCollectionListView->AddItem(new BStringItem(collection->ItemAt(i)->Text()));
+}
+
+
+BString
+MainWindow::_BuildFullUrl() const
+{
+    BString url(fUrlField->Text());
+    BString params = fQueryParamsEditor->FormEncodedValues();
+
+	if (params.IsEmpty())
+		return url;
+
+	url << (url.FindFirst('?') >= 0 ? "&" : "?");
+	url << params;
+
+    return url;
 }
