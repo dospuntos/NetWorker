@@ -27,19 +27,21 @@ MessagesEqual(const BMessage& a, const BMessage& b)
 
 RequestData::RequestData()
     :
-    fAuthType("none")
+    fAuthType("none"),
+	fMethod("GET")
 {
 }
 
 
 RequestData::RequestData(const BString& method, const BString& url, const BString& body,
-	const BMessage& params, const BString& bodyMode, const BString& filePath,
-	const BString& authType, const BMessage& authValues)
+	const BMessage& params, const BMessage& queryParams, const BString& bodyMode,
+	const BString& filePath, const BString& authType, const BMessage& authValues)
 	:
 	fMethod(method),
 	fUrl(url),
 	fBody(body),
 	fParams(params),
+	fQueryParams(queryParams),
 	fBodyMode(bodyMode),
 	fFilePath(filePath),
 	fAuthType(authType),
@@ -58,6 +60,10 @@ RequestData::RequestData(const BMessage& archive)
     BMessage params;
     if (archive.FindMessage("params", &params) == B_OK)
         fParams = params;
+
+	BMessage queryParams;
+	if (archive.FindMessage("queryParams", &queryParams) == B_OK)
+		fQueryParams = queryParams;
 
 	BString bodyMode;
 	if (archive.FindString("bodyMode", &bodyMode) == B_OK)
@@ -81,6 +87,7 @@ RequestData::Archive(BMessage& archive) const
     archive.AddString("url", fUrl);
     archive.AddString("body", fBody);
     archive.AddMessage("params", &fParams);
+	archive.AddMessage("queryParams", &fQueryParams);
 	archive.AddString("bodyMode", fBodyMode);
 	archive.AddString("filePath", fFilePath);
 	archive.AddString("authType", fAuthType);
@@ -93,6 +100,7 @@ RequestData::Equals(const RequestData& other) const
 {
 	return fMethod == other.fMethod && fUrl == other.fUrl && fBody == other.fBody
 		&& fFilePath == other.fFilePath && fAuthType == other.fAuthType
-		&& MessagesEqual(fParams, other.fParams) && MessagesEqual(fAuthValues, other.fAuthValues);
+		&& MessagesEqual(fParams, other.fParams) && MessagesEqual(fQueryParams, other.fQueryParams)
+		&& MessagesEqual(fAuthValues, other.fAuthValues);
 }
 

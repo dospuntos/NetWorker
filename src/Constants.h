@@ -23,6 +23,7 @@ enum {
 	M_NOT_IMPLEMENTED = 'nimp',
 	M_TOGGLE_PREVIEW = 'tprv',
 
+	M_NEW_REQUEST = 'nrqs',
 	M_SEND_REQUEST = 'send',
 	M_CLEAR_RESPONSE = 'clrr',
 	M_FORM_PARAM_ADD = 'fpad',

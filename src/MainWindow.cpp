@@ -184,6 +184,14 @@ MainWindow::MessageReceived(BMessage* message)
 
 	switch (message->what) {
 
+		case M_NEW_REQUEST:
+		{
+			_ClearResponse();
+			RequestData data;
+			_LoadRequestData(data);
+			_UpdatePreview();
+			break;
+		}
 		case M_SEND_REQUEST:
 			if (fCurrentResult.has_value()) {
 				fSession.Cancel(fCurrentResult.value());
@@ -308,10 +316,10 @@ MainWindow::MessageReceived(BMessage* message)
 			BString method(marked ? marked->Label() : "GET");
 			bool bodyAllowed = (method != "GET" && method != "HEAD");
 
-			fBodyTabView->TabAt(0)->SetEnabled(bodyAllowed); // Raw
+			fBodyTabView->TabAt(1)->SetEnabled(bodyAllowed); // Raw
 
-			if (!bodyAllowed && fBodyTabView->Selection() < 1)
-				fBodyTabView->Select(1); // jump to Authorization tab
+			if (!bodyAllowed && fBodyTabView->Selection() == 1)
+				fBodyTabView->Select(0); // jump to Params tab
 
 			_UpdatePreview();
 			break;
@@ -522,9 +530,10 @@ MainWindow::MessageReceived(BMessage* message)
 			BString bodyText(fBodyPanel->CurrentBody());
 
 			BMessage params = fBodyPanel->FormEditor()->CurrentValues();
+			BMessage queryParams = fQueryParamsEditor->CurrentValues();
 
-			RequestData data(method, urlText, bodyText, params, fBodyPanel->CurrentMode(),
-				fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
+			RequestData data(method, urlText, bodyText, params, queryParams,
+				fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
 				fAuthPanel->CurrentValues());
 
 			collection->AddItem(new CollectionItem(data));
@@ -697,7 +706,7 @@ MainWindow::_BuildMenu()
 	// File menu
 	menu = new BMenu(B_TRANSLATE("File"));
 
-	menu->AddItem(new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_CLEAR_RESPONSE), 'N'));
+	menu->AddItem(new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_NEW_REQUEST), 'N'));
 	menu->AddSeparatorItem();
 	menu->AddItem(
 		new BMenuItem(B_TRANSLATE("Import" B_UTF8_ELLIPSIS), new BMessage(M_NOT_IMPLEMENTED)));
@@ -775,7 +784,8 @@ MainWindow::_BuildRequestPanel()
 
 	// Request tabs
 	fQueryParamsEditor = new KeyValueEditor("Key", "Value");
-	fQueryParamsEditor->SetTarget(this, M_QUERY_PARAM_ADD, M_QUERY_PARAM_REMOVE, M_QUERY_PARAM_SELECT);
+	fQueryParamsEditor->SetTarget(this, M_QUERY_PARAM_ADD, M_QUERY_PARAM_REMOVE,
+		M_QUERY_PARAM_SELECT);
 
 	fBodyPanel = new BodyPanel();
 	fBodyPanel->SetTarget(this, M_BODY_MODE_CHANGED);
@@ -969,13 +979,14 @@ MainWindow::_SendRequest()
 
 	// Add to history
 	BMessage params = fBodyPanel->FormEditor()->CurrentValues();
+	BMessage queryParams = fQueryParamsEditor->CurrentValues();
 
 	BHttpFields requestFields;
 	fAuthPanel->ApplyTo(requestFields);
 	if (requestFields.CountFields() > 0)
 		request.SetFields(requestFields);
 
-	RequestData data(method, url.UrlString(), fPendingRequestBody, params,
+	RequestData data(method, url.UrlString(), fPendingRequestBody, params, queryParams,
 		fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
 		fAuthPanel->CurrentValues());
 	HistoryItem* newItem = new HistoryItem(data);
@@ -1066,10 +1077,19 @@ MainWindow::_SaveSettings()
 
 	BMessage settings;
 	settings.AddRect("main_window_rect", Frame());
-	settings.AddString("urlField", fUrlField->Text());
 
+	// save current values
 	BMenuItem* marked = fMethodMenu->FindMarked();
-	settings.AddString("method", marked ? marked->Label() : "GET");
+	BString method = marked ? marked->Label() : "GET";
+
+	RequestData current(method, fUrlField->Text(), fBodyPanel->CurrentBody(),
+		fBodyPanel->FormEditor()->CurrentValues(), fQueryParamsEditor->CurrentValues(),
+		fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
+		fAuthPanel->CurrentValues());
+
+	BMessage currentArchive;
+	current.Archive(currentArchive);
+	settings.AddMessage("currentRequest", &currentArchive);
 
 	// save history
 	for (int32 i = 0; i < fHistoryPanel->CountItems(); ++i) {
@@ -1089,6 +1109,7 @@ MainWindow::_SaveSettings()
 void
 MainWindow::_RestoreValues(BMessage& settings)
 {
+	// Restore window size/position
 	BRect frame;
 	if (settings.FindRect("main_window_rect", &frame) == B_OK) {
 		MoveTo(frame.LeftTop());
@@ -1096,20 +1117,11 @@ MainWindow::_RestoreValues(BMessage& settings)
 		MoveOnScreen();
 	}
 
-	BString text;
-
-	// Restore values
-	if (settings.FindString("urlField", &text) == B_OK)
-		fUrlField->SetText(text.String());
-
-	if (settings.FindString("method", &text) == B_OK) {
-		for (int32 i = 0; i < fMethodMenu->CountItems(); ++i) {
-			BMenuItem* menuItem = fMethodMenu->ItemAt(i);
-			if (text == menuItem->Label()) {
-				menuItem->SetMarked(true);
-				break;
-			}
-		}
+	// Restore fields
+	BMessage currentArchive;
+	if (settings.FindMessage("currentRequest", &currentArchive) == B_OK) {
+		RequestData current(currentArchive);
+		_LoadRequestData(current);
 	}
 
 	// Restore history
@@ -1146,6 +1158,7 @@ MainWindow::_LoadRequestData(const RequestData& data)
 	data.fAuthValues.FindString("headerValue", &headerValue);
 
 	fAuthPanel->LoadFrom(data.fAuthType, data.fAuthValues);
+	fQueryParamsEditor->LoadFrom(data.fQueryParams);
 }
 
 

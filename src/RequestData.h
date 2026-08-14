@@ -12,7 +12,7 @@ class RequestData {
 public:
     RequestData();
     RequestData(const BString& method, const BString& url, const BString& body,
-        const BMessage& params, const BString& bodyMode, const BString& filePath, const BString& authType, const BMessage& authValues);
+        const BMessage& params, const BMessage& queryParams, const BString& bodyMode, const BString& filePath, const BString& authType, const BMessage& authValues);
     explicit RequestData(const BMessage& archive);
 
     status_t Archive(BMessage& archive) const;
@@ -22,6 +22,7 @@ public:
     BString  fUrl;
     BString  fBody;
     BMessage fParams;
+	BMessage fQueryParams;
 	BString  fBodyMode; // none, raw, form, file
 	BString  fFilePath;
     BString  fAuthType; // none, basic, bearer, apikey
