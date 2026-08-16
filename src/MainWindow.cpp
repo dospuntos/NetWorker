@@ -1213,16 +1213,14 @@ MainWindow::_RestoreValues(BMessage& settings)
 
 	bool showPreview;
 	if (settings.FindBool("showPreview", &showPreview) == B_OK) {
+		fRequestAreaSplit->SetItemCollapsed(1, !showPreview);
 		fTogglePreview->SetMarked(showPreview);
-		if (showPreview)
-			PostMessage(M_TOGGLE_PREVIEW);
 	}
 
 	bool showSidebar;
 	if (settings.FindBool("showSidebar", &showSidebar) == B_OK) {
+		fOuterSplit->SetItemCollapsed(1, !showSidebar);
 		fToggleSidebar->SetMarked(showSidebar);
-		if (!showSidebar)
-			PostMessage(M_TOGGLE_SIDEBAR);
 	}
 
 	// Restore fields
