@@ -147,9 +147,11 @@ AuthPanel::ApplyTo(BHttpFields& fields) const
 	if (type == "basic") {
 		BString credentials;
 		credentials << fUsernameField->Text() << ":" << fPasswordField->Text();
-		BString header;
-		header << "Basic " << Base64Encode(credentials);
-		fields.AddField("Authorization", header.String());
+		if (credentials.Length() > 1) {
+			BString header;
+			header << "Basic " << Base64Encode(credentials);
+			fields.AddField("Authorization", header.String());
+		}
 	} else if (type == "bearer") {
 		BString token(fTokenField->Text());
 		if (token.Length() > 0) {

@@ -16,6 +16,7 @@ Compose a request with method, URL, headers, form parameters, or a raw body, aut
   - Method selector: GET, QUERY, POST, PUT, PATCH, DELETE
   - URL input with validation
   - Live request preview panel
+  - Custom headers
 
 - **Request body**
   - Raw body editor

@@ -95,6 +95,10 @@ HeadersPanel::LoadSelectedIntoFields()
     if (selected == nullptr)
         return;
 
+	auto* row = static_cast<HeaderRow*>(selected);
+    if (!row->fIsCustom)
+        return;   // ignore system headers
+
     auto* keyField = static_cast<BStringField*>(selected->GetField(0));
     auto* valField = static_cast<BStringField*>(selected->GetField(1));
     fKeyField->SetText(keyField->String());

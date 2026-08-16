@@ -735,8 +735,8 @@ MainWindow::_BuildMenu()
 	// View menu
 	menu = new BMenu(B_TRANSLATE("View"));
 
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Request preview"), new BMessage(M_TOGGLE_PREVIEW), 'P'));
+	fTogglePreview = new BMenuItem(B_TRANSLATE("Request preview"), new BMessage(M_TOGGLE_PREVIEW), 'P');
+	menu->AddItem(fTogglePreview);
 
 	menuBar->AddItem(menu);
 
@@ -1110,6 +1110,8 @@ MainWindow::_SaveSettings()
 	BMessage settings;
 	settings.AddRect("main_window_rect", Frame());
 
+	settings.AddBool("showPreview", fTogglePreview->IsMarked());
+
 	// save current values
 	BMenuItem* marked = fMethodMenu->FindMarked();
 	BString method = marked ? marked->Label() : "GET";
@@ -1147,6 +1149,13 @@ MainWindow::_RestoreValues(BMessage& settings)
 		MoveTo(frame.LeftTop());
 		ResizeTo(frame.Width(), frame.Height());
 		MoveOnScreen();
+	}
+
+	bool showPreview;
+	if (settings.FindBool("showPreview", &showPreview) == B_OK) {
+		fTogglePreview->SetMarked(showPreview);
+		if (showPreview)
+			PostMessage(M_TOGGLE_PREVIEW);
 	}
 
 	// Restore fields

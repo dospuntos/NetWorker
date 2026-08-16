@@ -58,6 +58,7 @@ private:
 	void        		_ClearResponse();
 
 	BMenuBar*			fMenuBar;
+	BMenuItem*			fTogglePreview;
     BPopUpMenu*         fMethodMenu;
     BMenuField*         fMethodField;
     BTextControl*       fUrlField;
