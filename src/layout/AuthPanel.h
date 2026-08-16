@@ -25,6 +25,7 @@ using BPrivate::Network::BHttpFields;
 class AuthPanel {
 public:
     AuthPanel();
+	~AuthPanel();
 
     BView* View() const { return fRadioGroup->View(); }
 

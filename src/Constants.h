@@ -22,6 +22,7 @@ enum {
 	M_SHOW_SETTINGS = 'stng',
 	M_NOT_IMPLEMENTED = 'nimp',
 	M_TOGGLE_PREVIEW = 'tprv',
+	M_TOGGLE_SIDEBAR = 'tsbr',
 
 	M_NEW_REQUEST = 'nrqs',
 	M_SEND_REQUEST = 'send',
@@ -52,6 +53,7 @@ enum {
 	M_CREATE_COLLECTION = 'crcl',
 	M_DELETE_COLLECTION = 'dcol',
 	M_CONFIRM_DELETE_COLLECTION = 'cdcl',
+	M_COPY_COLLECTION_URL = 'cpcu',
 
 	M_SAVE_TO_COLLECTION = 'stco',
 	M_CONFIRM_SAVE_TO_COLLECTION = 'cstc',

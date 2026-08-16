@@ -81,6 +81,14 @@ BodyPanel::BodyPanel()
 }
 
 
+BodyPanel::~BodyPanel()
+{
+	delete fRadioGroup;
+	delete fFormEditor;
+	delete fFilePanel;
+}
+
+
 void
 BodyPanel::SetTarget(BHandler* target, uint32 modeChangedWhat)
 {

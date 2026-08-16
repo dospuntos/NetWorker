@@ -59,6 +59,7 @@ private:
 
 	BMenuBar*			fMenuBar;
 	BMenuItem*			fTogglePreview;
+	BMenuItem*			fToggleSidebar;
     BPopUpMenu*         fMethodMenu;
     BMenuField*         fMethodField;
     BTextControl*       fUrlField;
@@ -74,6 +75,7 @@ private:
     BScrollView*        fResponseBodyScroll;
     BSplitView*         fSplitView;
 	BSplitView*			fRequestAreaSplit;
+	BSplitView*			fOuterSplit;
     BHttpSession                fSession;
     std::optional<BHttpResult>  fCurrentResult;
 	BString fPendingRequestBody;

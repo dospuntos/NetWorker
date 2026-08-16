@@ -126,6 +126,7 @@ public:
                 menu->AddItem(new BMenuItem("Load", new BMessage(M_LOAD_COLLECTION_ITEM)));
                 menu->AddItem(new BMenuItem("Rename" B_UTF8_ELLIPSIS,
                     new BMessage(M_SHOW_RENAME_COLLECTION_ITEM)));
+				menu->AddItem(new BMenuItem("Copy URL", new BMessage(M_COPY_COLLECTION_URL)));
                 menu->AddSeparatorItem();
                 menu->AddItem(new BMenuItem("Delete", new BMessage(M_DELETE_COLLECTION_ITEM)));
                 menu->SetTargetForItems(Window());
@@ -169,10 +170,12 @@ MainWindow::~MainWindow()
 	if (fCurrentResult.has_value())
 		fSession.Cancel(fCurrentResult.value());
 
+	_SaveSettings();
+
 	delete fAuthPanel;
 	delete fBodyPanel;
-
-	_SaveSettings();
+	delete fQueryParamsEditor;
+	delete fHeadersPanel;
 }
 
 
@@ -383,6 +386,35 @@ MainWindow::MessageReceived(BMessage* message)
 				break;
 
 			auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
+
+			if (be_clipboard->Lock()) {
+				be_clipboard->Clear();
+
+				BMessage* clip = be_clipboard->Data();
+				if (clip != nullptr) {
+					clip->AddData("text/plain", B_MIME_TYPE, item->fData.fUrl.String(),
+						item->fData.fUrl.Length());
+					be_clipboard->Commit();
+				}
+
+				be_clipboard->Unlock();
+			}
+			break;
+		}
+
+		case M_COPY_COLLECTION_URL:
+		{
+			int32 index = fCollectionListView->CurrentSelection();
+			if (index < 0 || fActiveCollectionIndex < 0)
+				break;
+
+			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+			if (collection == nullptr)
+				break;
+
+			CollectionItem* item = collection->ItemAt(index);
+			if (item == nullptr)
+				break;
 
 			if (be_clipboard->Lock()) {
 				be_clipboard->Clear();
@@ -667,6 +699,17 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_TOGGLE_SIDEBAR:
+		{
+			bool visible = !fOuterSplit->IsItemCollapsed(1);
+
+			fOuterSplit->SetItemCollapsed(1, visible);
+
+			if (BMenuItem* item = fMenuBar->FindItem(M_TOGGLE_SIDEBAR))
+				item->SetMarked(!visible);
+			break;
+		}
+
 		case B_ABOUT_REQUESTED:
 			be_app->AboutRequested();
 			break;
@@ -721,8 +764,6 @@ MainWindow::_BuildMenu()
 	// File menu
 	menu = new BMenu(B_TRANSLATE("File"));
 
-	menu->AddItem(new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_NEW_REQUEST), 'N'));
-	menu->AddSeparatorItem();
 	menu->AddItem(
 		new BMenuItem(B_TRANSLATE("Import" B_UTF8_ELLIPSIS), new BMessage(M_NOT_IMPLEMENTED)));
 	menu->AddItem(
@@ -732,12 +773,30 @@ MainWindow::_BuildMenu()
 
 	menuBar->AddItem(menu);
 
+	// Request menu
+	menu = new BMenu(B_TRANSLATE("Request"));
+
+	menu->AddItem(
+		new BMenuItem(B_TRANSLATE("Send request"), new BMessage(M_SEND_REQUEST), B_ENTER));
+
+	menu->AddItem(new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_NEW_REQUEST), 'N'));
+	menu->AddSeparatorItem();
+
+	menu->AddItem(
+		new BMenuItem(B_TRANSLATE("Clear response"), new BMessage(M_CLEAR_RESPONSE), 'D'));
+
+	menuBar->AddItem(menu);
+
 	// View menu
 	menu = new BMenu(B_TRANSLATE("View"));
 
 	fTogglePreview
-		= new BMenuItem(B_TRANSLATE("Request preview"), new BMessage(M_TOGGLE_PREVIEW), 'P');
+		= new BMenuItem(B_TRANSLATE("Show preview"), new BMessage(M_TOGGLE_PREVIEW), 'P');
 	menu->AddItem(fTogglePreview);
+
+	fToggleSidebar
+		= new BMenuItem(B_TRANSLATE("Show sidebar"), new BMessage(M_TOGGLE_SIDEBAR), 'H');
+	menu->AddItem(fToggleSidebar);
 
 	menuBar->AddItem(menu);
 
@@ -785,7 +844,6 @@ MainWindow::_BuildRequestPanel()
 
 	// Send button
 	fSendButton = new BButton("send", "Send", new BMessage(M_SEND_REQUEST));
-	fSendButton->MakeDefault(true);
 
 	// Save button
 	fSaveButton = new BButton("saveToCollection", "Save", new BMessage(M_SAVE_TO_COLLECTION));
@@ -956,11 +1014,11 @@ MainWindow::_BuildLayout()
 	fSidebarTabs->AddTab(collectionsPanel);
 	fSidebarTabs->TabAt(1)->SetLabel("Collections");
 
-	BSplitView* outerSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
-	outerSplit->AddChild(fSplitView, 0.8f);
-	outerSplit->AddChild(fSidebarTabs, 0.2f);
+	fOuterSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
+	fOuterSplit->AddChild(fSplitView, 0.8f);
+	fOuterSplit->AddChild(fSidebarTabs, 0.2f);
 
-	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(outerSplit).End();
+	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(fOuterSplit).End();
 	_UpdateHistoryButtons();
 	_UpdatePreview();
 	_RefreshCollectionMenu();
@@ -1112,6 +1170,7 @@ MainWindow::_SaveSettings()
 	settings.AddRect("main_window_rect", Frame());
 
 	settings.AddBool("showPreview", fTogglePreview->IsMarked());
+	settings.AddBool("showSidebar", fToggleSidebar->IsMarked());
 
 	// save current values
 	BMenuItem* marked = fMethodMenu->FindMarked();
@@ -1157,6 +1216,13 @@ MainWindow::_RestoreValues(BMessage& settings)
 		fTogglePreview->SetMarked(showPreview);
 		if (showPreview)
 			PostMessage(M_TOGGLE_PREVIEW);
+	}
+
+	bool showSidebar;
+	if (settings.FindBool("showSidebar", &showSidebar) == B_OK) {
+		fToggleSidebar->SetMarked(showSidebar);
+		if (!showSidebar)
+			PostMessage(M_TOGGLE_SIDEBAR);
 	}
 
 	// Restore fields

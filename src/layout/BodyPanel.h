@@ -22,6 +22,7 @@ class BFilePanel;
 class BodyPanel {
 public:
     BodyPanel();
+	~BodyPanel();
 
     BView* View() const { return fRadioGroup->View(); }
 

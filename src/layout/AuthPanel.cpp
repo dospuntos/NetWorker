@@ -89,6 +89,12 @@ AuthPanel::AuthPanel()
 }
 
 
+AuthPanel::~AuthPanel()
+{
+	delete fRadioGroup;
+}
+
+
 void
 AuthPanel::SetTarget(BHandler* target, uint32 changedWhat)
 {
