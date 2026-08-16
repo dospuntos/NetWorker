@@ -33,12 +33,13 @@ RequestData::RequestData()
 }
 
 
-RequestData::RequestData(const BString& method, const BString& url, const BString& body,
-	const BMessage& params, const BMessage& queryParams, const BString& bodyMode,
+RequestData::RequestData(const BString& method, const BString& url, const BMessage& customHeaders,
+	const BString& body, const BMessage& params, const BMessage& queryParams, const BString& bodyMode,
 	const BString& filePath, const BString& authType, const BMessage& authValues)
 	:
 	fMethod(method),
 	fUrl(url),
+	fCustomHeaders(customHeaders),
 	fBody(body),
 	fParams(params),
 	fQueryParams(queryParams),
@@ -55,6 +56,11 @@ RequestData::RequestData(const BMessage& archive)
 {
     archive.FindString("method", &fMethod);
     archive.FindString("url", &fUrl);
+
+	BMessage customHeaders;
+	if (archive.FindMessage("customHeaders", &customHeaders) == B_OK)
+		fCustomHeaders = customHeaders;
+
     archive.FindString("body", &fBody);
 
     BMessage params;
@@ -85,6 +91,7 @@ RequestData::Archive(BMessage& archive) const
 {
     archive.AddString("method", fMethod);
     archive.AddString("url", fUrl);
+	archive.AddMessage("customHeaders", &fCustomHeaders);
     archive.AddString("body", fBody);
     archive.AddMessage("params", &fParams);
 	archive.AddMessage("queryParams", &fQueryParams);
@@ -101,6 +108,7 @@ RequestData::Equals(const RequestData& other) const
 	return fMethod == other.fMethod && fUrl == other.fUrl && fBody == other.fBody
 		&& fFilePath == other.fFilePath && fAuthType == other.fAuthType
 		&& MessagesEqual(fParams, other.fParams) && MessagesEqual(fQueryParams, other.fQueryParams)
-		&& MessagesEqual(fAuthValues, other.fAuthValues);
+		&& MessagesEqual(fAuthValues, other.fAuthValues)
+		&& MessagesEqual(fCustomHeaders, other.fCustomHeaders);
 }
 

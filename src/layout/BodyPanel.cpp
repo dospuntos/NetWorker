@@ -22,7 +22,6 @@
 
 namespace {
 
-// Moved here from MainWindow.cpp — the raw body view is now owned by BodyPanel.
 class PreviewTextView : public BTextView {
 public:
     PreviewTextView(const char* name) : BTextView(name) {}

@@ -275,6 +275,20 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_HEADER_ADD:
+			fHeadersPanel->AddCurrentFields();
+			_UpdatePreview();
+			break;
+
+		case M_HEADER_REMOVE:
+			fHeadersPanel->RemoveSelected();
+			_UpdatePreview();
+			break;
+
+		case M_HEADER_SELECT:
+			fHeadersPanel->LoadSelectedIntoFields();
+			break;
+
 		case M_FORM_PARAM_ADD:
 			fBodyPanel->FormEditor()->AddCurrentFields();
 			_UpdatePreview();
@@ -316,9 +330,9 @@ MainWindow::MessageReceived(BMessage* message)
 			BString method(marked ? marked->Label() : "GET");
 			bool bodyAllowed = (method != "GET" && method != "HEAD");
 
-			fBodyTabView->TabAt(1)->SetEnabled(bodyAllowed); // Raw
+			fBodyTabView->TabAt(2)->SetEnabled(bodyAllowed); // Body tab
 
-			if (!bodyAllowed && fBodyTabView->Selection() == 1)
+			if (!bodyAllowed && fBodyTabView->Selection() == 2)
 				fBodyTabView->Select(0); // jump to Params tab
 
 			_UpdatePreview();
@@ -531,8 +545,9 @@ MainWindow::MessageReceived(BMessage* message)
 
 			BMessage params = fBodyPanel->FormEditor()->CurrentValues();
 			BMessage queryParams = fQueryParamsEditor->CurrentValues();
+			BMessage customHeaders = fHeadersPanel->CurrentHeaders();
 
-			RequestData data(method, urlText, bodyText, params, queryParams,
+			RequestData data(method, urlText, customHeaders, bodyText, params, queryParams,
 				fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
 				fAuthPanel->CurrentValues());
 
@@ -783,6 +798,9 @@ MainWindow::_BuildRequestPanel()
 							   .View();
 
 	// Request tabs
+	fHeadersPanel = new HeadersPanel();
+	fHeadersPanel->SetTarget(this, M_HEADER_ADD, M_HEADER_REMOVE, M_HEADER_SELECT);
+
 	fQueryParamsEditor = new KeyValueEditor("Key", "Value");
 	fQueryParamsEditor->SetTarget(this, M_QUERY_PARAM_ADD, M_QUERY_PARAM_REMOVE,
 		M_QUERY_PARAM_SELECT);
@@ -796,12 +814,14 @@ MainWindow::_BuildRequestPanel()
 	fAuthPanel->SetTarget(this, M_AUTH_TYPE_CHANGED);
 
 	fBodyTabView = new PreviewTabView("bodyTabs");
+	fBodyTabView->AddTab(fHeadersPanel->View());
+	fBodyTabView->TabAt(0)->SetLabel("Headers");
 	fBodyTabView->AddTab(fQueryParamsEditor->View());
-	fBodyTabView->TabAt(0)->SetLabel("Params");
+	fBodyTabView->TabAt(1)->SetLabel("Params");
 	fBodyTabView->AddTab(fBodyPanel->View());
-	fBodyTabView->TabAt(1)->SetLabel("Body");
+	fBodyTabView->TabAt(2)->SetLabel("Body");
 	fBodyTabView->AddTab(fAuthPanel->View());
-	fBodyTabView->TabAt(2)->SetLabel("Authorization");
+	fBodyTabView->TabAt(3)->SetLabel("Authorization");
 
 	BView* bodyPanel = BLayoutBuilder::Group<>(B_VERTICAL)
 						   .SetInsets(B_USE_WINDOW_INSETS)
@@ -983,10 +1003,22 @@ MainWindow::_SendRequest()
 
 	BHttpFields requestFields;
 	fAuthPanel->ApplyTo(requestFields);
+
+	BMessage customHeaders = fHeadersPanel->CurrentHeaders();
+	BMessage h;
+	for (int32 i = 0; customHeaders.FindMessage("header", i, &h) == B_OK; i++) {
+		BString key, value;
+		h.FindString("key", &key);
+		h.FindString("value", &value);
+		if (key.Length() > 0)
+			requestFields.AddField(key.String(), value.String());
+		h.MakeEmpty();
+	}
+
 	if (requestFields.CountFields() > 0)
 		request.SetFields(requestFields);
 
-	RequestData data(method, url.UrlString(), fPendingRequestBody, params, queryParams,
+	RequestData data(method, url.UrlString(), fHeadersPanel->CurrentHeaders(), fPendingRequestBody, params, queryParams,
 		fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
 		fAuthPanel->CurrentValues());
 	HistoryItem* newItem = new HistoryItem(data);
@@ -1082,7 +1114,7 @@ MainWindow::_SaveSettings()
 	BMenuItem* marked = fMethodMenu->FindMarked();
 	BString method = marked ? marked->Label() : "GET";
 
-	RequestData current(method, fUrlField->Text(), fBodyPanel->CurrentBody(),
+	RequestData current(method, fUrlField->Text(), fHeadersPanel->CurrentHeaders(), fBodyPanel->CurrentBody(),
 		fBodyPanel->FormEditor()->CurrentValues(), fQueryParamsEditor->CurrentValues(),
 		fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
 		fAuthPanel->CurrentValues());
@@ -1159,6 +1191,7 @@ MainWindow::_LoadRequestData(const RequestData& data)
 
 	fAuthPanel->LoadFrom(data.fAuthType, data.fAuthValues);
 	fQueryParamsEditor->LoadFrom(data.fQueryParams);
+	fHeadersPanel->LoadFrom(data.fCustomHeaders);
 }
 
 
@@ -1184,6 +1217,7 @@ MainWindow::_UpdatePreview()
 	if (url.IsValid())
 		preview << "Host: " << url.Host() << "\n";
 
+	fHeadersPanel->SetComputedHeaders(_ComputedHeaders());
 	BHttpFields previewFields;
 	fAuthPanel->ApplyTo(previewFields);
 	for (const BHttpFields::Field& field : previewFields) {
@@ -1192,6 +1226,17 @@ MainWindow::_UpdatePreview()
 		preview << BString(name.data(), name.size()) << ": " << BString(value.data(), value.size())
 				<< "\n";
 	}
+
+	// Custom headers
+    BMessage customHeaders = fHeadersPanel->CurrentHeaders();
+    BMessage h;
+    for (int32 i = 0; customHeaders.FindMessage("header", i, &h) == B_OK; i++) {
+        BString key, value;
+        h.FindString("key", &key);
+        h.FindString("value", &value);
+        preview << key << ": " << value << "\n";
+        h.MakeEmpty();
+    }
 
 	BString mode = fBodyPanel->CurrentMode();
 	bool bodyAllowed = (method != "GET" && method != "HEAD" && mode != "none");
@@ -1418,4 +1463,54 @@ MainWindow::_BuildFullUrl() const
 	url << params;
 
     return url;
+}
+
+
+BMessage
+MainWindow::_ComputedHeaders() const
+{
+    BMessage headers;
+
+    BString urlText = _BuildFullUrl();
+    BUrl url(urlText, false);
+    if (url.IsValid()) {
+        BMessage h;
+        h.AddString("key", "Host");
+        h.AddString("value", url.Host());
+        headers.AddMessage("header", &h);
+    }
+
+    BMenuItem* marked = fMethodMenu->FindMarked();
+    BString method(marked ? marked->Label() : "GET");
+    bool bodyAllowed = (method != "GET" && method != "HEAD" && fBodyPanel->CurrentMode() != "none");
+
+    if (bodyAllowed) {
+        BString body = fBodyPanel->CurrentBody();
+        if (body.Length() > 0) {
+            BMessage h;
+            h.AddString("key", "Content-Type");
+            h.AddString("value", fBodyPanel->CurrentContentType());
+            headers.AddMessage("header", &h);
+
+            BMessage h2;
+            h2.AddString("key", "Content-Length");
+            BString len;
+            len << body.Length();
+            h2.AddString("value", len);
+            headers.AddMessage("header", &h2);
+        }
+    }
+
+    BHttpFields authFields;
+    fAuthPanel->ApplyTo(authFields);
+    for (const BHttpFields::Field& field : authFields) {
+        std::string_view name = field.Name();
+        std::string_view value = field.Value();
+        BMessage h;
+        h.AddString("key", BString(name.data(), name.size()));
+        h.AddString("value", BString(value.data(), value.size()));
+        headers.AddMessage("header", &h);
+    }
+
+    return headers;
 }

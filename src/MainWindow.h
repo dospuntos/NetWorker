@@ -9,6 +9,7 @@
 #include "AuthPanel.h"
 #include "BodyPanel.h"
 #include "Collection.h"
+#include "HeadersPanel.h"
 #include "KeyValueEditor.h"
 #include <optional>
 
@@ -110,6 +111,8 @@ private:
 	void _RefreshCollectionMenu();
 	void _RefreshCollectionItemList();
 	BString _BuildFullUrl() const;
+	BMessage _ComputedHeaders() const;
+	HeadersPanel* fHeadersPanel;
 };
 
 #endif

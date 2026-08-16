@@ -11,7 +11,7 @@
 class RequestData {
 public:
     RequestData();
-    RequestData(const BString& method, const BString& url, const BString& body,
+    RequestData(const BString& method, const BString& url, const BMessage& customHeaders, const BString& body,
         const BMessage& params, const BMessage& queryParams, const BString& bodyMode, const BString& filePath, const BString& authType, const BMessage& authValues);
     explicit RequestData(const BMessage& archive);
 
@@ -20,6 +20,7 @@ public:
 
     BString  fMethod;
     BString  fUrl;
+	BMessage fCustomHeaders;
     BString  fBody;
     BMessage fParams;
 	BMessage fQueryParams;
