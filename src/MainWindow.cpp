@@ -735,7 +735,8 @@ MainWindow::_BuildMenu()
 	// View menu
 	menu = new BMenu(B_TRANSLATE("View"));
 
-	fTogglePreview = new BMenuItem(B_TRANSLATE("Request preview"), new BMessage(M_TOGGLE_PREVIEW), 'P');
+	fTogglePreview
+		= new BMenuItem(B_TRANSLATE("Request preview"), new BMessage(M_TOGGLE_PREVIEW), 'P');
 	menu->AddItem(fTogglePreview);
 
 	menuBar->AddItem(menu);
@@ -1018,9 +1019,9 @@ MainWindow::_SendRequest()
 	if (requestFields.CountFields() > 0)
 		request.SetFields(requestFields);
 
-	RequestData data(method, url.UrlString(), fHeadersPanel->CurrentHeaders(), fPendingRequestBody, params, queryParams,
-		fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
-		fAuthPanel->CurrentValues());
+	RequestData data(method, url.UrlString(), fHeadersPanel->CurrentHeaders(), fPendingRequestBody,
+		params, queryParams, fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(),
+		fAuthPanel->CurrentType(), fAuthPanel->CurrentValues());
 	HistoryItem* newItem = new HistoryItem(data);
 
 	for (int32 i = 0; i < fHistoryPanel->CountItems(); ++i) {
@@ -1116,10 +1117,10 @@ MainWindow::_SaveSettings()
 	BMenuItem* marked = fMethodMenu->FindMarked();
 	BString method = marked ? marked->Label() : "GET";
 
-	RequestData current(method, fUrlField->Text(), fHeadersPanel->CurrentHeaders(), fBodyPanel->CurrentBody(),
-		fBodyPanel->FormEditor()->CurrentValues(), fQueryParamsEditor->CurrentValues(),
-		fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
-		fAuthPanel->CurrentValues());
+	RequestData current(method, fUrlField->Text(), fHeadersPanel->CurrentHeaders(),
+		fBodyPanel->CurrentBody(), fBodyPanel->FormEditor()->CurrentValues(),
+		fQueryParamsEditor->CurrentValues(), fBodyPanel->CurrentMode(),
+		fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(), fAuthPanel->CurrentValues());
 
 	BMessage currentArchive;
 	current.Archive(currentArchive);
@@ -1237,15 +1238,15 @@ MainWindow::_UpdatePreview()
 	}
 
 	// Custom headers
-    BMessage customHeaders = fHeadersPanel->CurrentHeaders();
-    BMessage h;
-    for (int32 i = 0; customHeaders.FindMessage("header", i, &h) == B_OK; i++) {
-        BString key, value;
-        h.FindString("key", &key);
-        h.FindString("value", &value);
-        preview << key << ": " << value << "\n";
-        h.MakeEmpty();
-    }
+	BMessage customHeaders = fHeadersPanel->CurrentHeaders();
+	BMessage h;
+	for (int32 i = 0; customHeaders.FindMessage("header", i, &h) == B_OK; i++) {
+		BString key, value;
+		h.FindString("key", &key);
+		h.FindString("value", &value);
+		preview << key << ": " << value << "\n";
+		h.MakeEmpty();
+	}
 
 	BString mode = fBodyPanel->CurrentMode();
 	bool bodyAllowed = (method != "GET" && method != "HEAD" && mode != "none");
@@ -1462,8 +1463,8 @@ MainWindow::_RefreshCollectionItemList()
 BString
 MainWindow::_BuildFullUrl() const
 {
-    BString url(fUrlField->Text());
-    BString params = fQueryParamsEditor->FormEncodedValues();
+	BString url(fUrlField->Text());
+	BString params = fQueryParamsEditor->FormEncodedValues();
 
 	if (params.IsEmpty())
 		return url;
@@ -1471,55 +1472,55 @@ MainWindow::_BuildFullUrl() const
 	url << (url.FindFirst('?') >= 0 ? "&" : "?");
 	url << params;
 
-    return url;
+	return url;
 }
 
 
 BMessage
 MainWindow::_ComputedHeaders() const
 {
-    BMessage headers;
+	BMessage headers;
 
-    BString urlText = _BuildFullUrl();
-    BUrl url(urlText, false);
-    if (url.IsValid()) {
-        BMessage h;
-        h.AddString("key", "Host");
-        h.AddString("value", url.Host());
-        headers.AddMessage("header", &h);
-    }
+	BString urlText = _BuildFullUrl();
+	BUrl url(urlText, false);
+	if (url.IsValid()) {
+		BMessage h;
+		h.AddString("key", "Host");
+		h.AddString("value", url.Host());
+		headers.AddMessage("header", &h);
+	}
 
-    BMenuItem* marked = fMethodMenu->FindMarked();
-    BString method(marked ? marked->Label() : "GET");
-    bool bodyAllowed = (method != "GET" && method != "HEAD" && fBodyPanel->CurrentMode() != "none");
+	BMenuItem* marked = fMethodMenu->FindMarked();
+	BString method(marked ? marked->Label() : "GET");
+	bool bodyAllowed = (method != "GET" && method != "HEAD" && fBodyPanel->CurrentMode() != "none");
 
-    if (bodyAllowed) {
-        BString body = fBodyPanel->CurrentBody();
-        if (body.Length() > 0) {
-            BMessage h;
-            h.AddString("key", "Content-Type");
-            h.AddString("value", fBodyPanel->CurrentContentType());
-            headers.AddMessage("header", &h);
+	if (bodyAllowed) {
+		BString body = fBodyPanel->CurrentBody();
+		if (body.Length() > 0) {
+			BMessage h;
+			h.AddString("key", "Content-Type");
+			h.AddString("value", fBodyPanel->CurrentContentType());
+			headers.AddMessage("header", &h);
 
-            BMessage h2;
-            h2.AddString("key", "Content-Length");
-            BString len;
-            len << body.Length();
-            h2.AddString("value", len);
-            headers.AddMessage("header", &h2);
-        }
-    }
+			BMessage h2;
+			h2.AddString("key", "Content-Length");
+			BString len;
+			len << body.Length();
+			h2.AddString("value", len);
+			headers.AddMessage("header", &h2);
+		}
+	}
 
-    BHttpFields authFields;
-    fAuthPanel->ApplyTo(authFields);
-    for (const BHttpFields::Field& field : authFields) {
-        std::string_view name = field.Name();
-        std::string_view value = field.Value();
-        BMessage h;
-        h.AddString("key", BString(name.data(), name.size()));
-        h.AddString("value", BString(value.data(), value.size()));
-        headers.AddMessage("header", &h);
-    }
+	BHttpFields authFields;
+	fAuthPanel->ApplyTo(authFields);
+	for (const BHttpFields::Field& field : authFields) {
+		std::string_view name = field.Name();
+		std::string_view value = field.Value();
+		BMessage h;
+		h.AddString("key", BString(name.data(), name.size()));
+		h.AddString("value", BString(value.data(), value.size()));
+		headers.AddMessage("header", &h);
+	}
 
-    return headers;
+	return headers;
 }
