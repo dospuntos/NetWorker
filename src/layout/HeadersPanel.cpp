@@ -9,6 +9,9 @@
 #include <Button.h>
 #include <ColumnListView.h>
 #include <ColumnTypes.h>
+#include <ControlLook.h>
+
+#include <InterfaceDefs.h>
 #include <LayoutBuilder.h>
 #include <TextControl.h>
 
@@ -20,6 +23,44 @@ public:
     bool fIsCustom;
 };
 
+class HeaderStringField : public BStringField {
+public:
+    HeaderStringField(const char* string, bool gray)
+        : BStringField(string), fGray(gray) {}
+    bool fGray;
+};
+
+class HeaderStringColumn : public BStringColumn {
+public:
+    using BStringColumn::BStringColumn;
+
+    void DrawField(BField* field, BRect rect, BView* targetView) override
+    {
+        auto* gf = dynamic_cast<HeaderStringField*>(field);
+
+        if (gf == nullptr)
+            return;
+
+        rgb_color color = gf->fGray
+			? ui_color(B_CONTROL_MARK_COLOR)
+			: ui_color(B_PANEL_TEXT_COLOR);
+
+        targetView->SetHighColor(color);
+        targetView->SetLowColor(targetView->ViewColor());
+        targetView->SetDrawingMode(B_OP_OVER);
+
+        BFont font;
+        targetView->GetFont(&font);
+        font_height fh;
+        font.GetHeight(&fh);
+
+        BString text(gf->String());
+        targetView->TruncateString(&text, B_TRUNCATE_END, rect.Width() - 8);
+
+        float y = rect.top + (rect.Height() - (fh.ascent + fh.descent)) / 2 + fh.ascent;
+        targetView->DrawString(text.String(), BPoint(rect.left + 4, y));
+    }
+};
 } // namespace
 
 
@@ -27,8 +68,8 @@ HeadersPanel::HeadersPanel()
 {
 	fList = new BColumnListView("headersList", B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE,
 		B_FANCY_BORDER);
-	fList->AddColumn(new BStringColumn("Header", 180, 80, 400, 0), 0);
-	fList->AddColumn(new BStringColumn("Value", 300, 80, 2000, 0), 1);
+	fList->AddColumn(new HeaderStringColumn("Header", 180, 80, 400, 0), 0);
+	fList->AddColumn(new HeaderStringColumn("Value", 300, 80, 2000, 0), 1);
 
 	fKeyField = new BTextControl("headerKey", "Header name", "", nullptr);
 	fValueField = new BTextControl("headerValue", "Value", "", nullptr);
@@ -69,8 +110,8 @@ HeadersPanel::AddCurrentFields()
 		return;
 
 	HeaderRow* row = new HeaderRow(true); // user-added
-	row->SetField(new BStringField(key.String()), 0);
-	row->SetField(new BStringField(value.String()), 1);
+	row->SetField(new HeaderStringField(key.String(), false), 0);
+	row->SetField(new HeaderStringField(value.String(), false), 1);
 	fList->AddRow(row);
 
 	fKeyField->SetText("");
@@ -104,8 +145,8 @@ HeadersPanel::LoadSelectedIntoFields()
 	if (!row->fIsCustom)
 		return; // ignore system headers
 
-	auto* keyField = static_cast<BStringField*>(selected->GetField(0));
-	auto* valField = static_cast<BStringField*>(selected->GetField(1));
+	auto* keyField = static_cast<HeaderStringField*>(selected->GetField(0));
+	auto* valField = static_cast<HeaderStringField*>(selected->GetField(1));
 	fKeyField->SetText(keyField->String());
 	fValueField->SetText(valField->String());
 }
@@ -149,8 +190,8 @@ HeadersPanel::LoadFrom(const BMessage& headers)
 		h.FindString("value", &value);
 
 		HeaderRow* row = new HeaderRow(true);
-		row->SetField(new BStringField(key.String()), 0);
-		row->SetField(new BStringField(value.String()), 1);
+		row->SetField(new HeaderStringField(key.String(), false), 0);
+		row->SetField(new HeaderStringField(value.String(), false), 1);
 		fList->AddRow(row);
 
 		h.MakeEmpty();
@@ -176,8 +217,8 @@ HeadersPanel::SetComputedHeaders(const BMessage& headers)
 		h.FindString("value", &value);
 
 		HeaderRow* row = new HeaderRow(false);
-		row->SetField(new BStringField(key.String()), 0);
-		row->SetField(new BStringField(value.String()), 1);
+		row->SetField(new HeaderStringField(key.String(), true), 0);
+		row->SetField(new HeaderStringField(value.String(), true), 1);
 		fList->AddRow(row, insertIndex++); // keep computed rows at the top
 
 		h.MakeEmpty();
