@@ -11,6 +11,7 @@
 #include "Collection.h"
 #include "HeadersPanel.h"
 #include "KeyValueEditor.h"
+#include "MenuBar.h"
 #include <optional>
 
 #include <ColumnListView.h>
@@ -47,7 +48,6 @@ public:
     virtual bool        QuitRequested();
 
 private:
-	BMenuBar*			_BuildMenu();
 	void        		_BuildLayout();
 	BView* 				_BuildRequestPanel();
 	BView* 				_BuildPreviewPanel();
@@ -57,9 +57,7 @@ private:
 	void        		_SendRequest();
 	void        		_ClearResponse();
 
-	BMenuBar*			fMenuBar;
-	BMenuItem*			fTogglePreview;
-	BMenuItem*			fToggleSidebar;
+	MenuBar*			fMenuBar;
     BPopUpMenu*         fMethodMenu;
     BMenuField*         fMethodField;
     BTextControl*       fUrlField;

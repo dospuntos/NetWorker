@@ -7,7 +7,6 @@
 #include "Collection.h"
 #include "Constants.h"
 #include "HistoryItem.h"
-#include "IconMenuItem.h"
 #include "RenameWindow.h"
 
 #include <RadioButton.h>
@@ -151,7 +150,7 @@ MainWindow::MainWindow()
 	fSession(BHttpSession()),
 	fActiveCollectionIndex(-1)
 {
-	fMenuBar = _BuildMenu();
+	fMenuBar = new MenuBar();
 	_BuildLayout();
 
 	// Load and restore settings
@@ -526,9 +525,13 @@ MainWindow::MessageReceived(BMessage* message)
 			if (fActiveCollectionIndex < 0)
 				break;
 
-			BAlert* alert = new BAlert("Delete collection",
-				"Delete this collection permanently? This cannot be undone.", "Cancel", "Delete",
-				nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+			BString collectionName = fCollections.ItemAt(fActiveCollectionIndex)->Name().String();
+			BString alertMsg;
+			alertMsg.SetToFormat("Delete the collection '%s' permanently?\nThis cannot be undone.",
+				collectionName.String());
+
+			BAlert* alert = new BAlert("Delete collection", alertMsg, "Cancel", "Delete", nullptr,
+				B_WIDTH_AS_USUAL, B_WARNING_ALERT);
 			alert->SetShortcut(0, B_ESCAPE);
 			alert->Go(new BInvoker(new BMessage(M_CONFIRM_DELETE_COLLECTION), this));
 			break;
@@ -562,7 +565,7 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_SAVE_TO_COLLECTION:
 		{
 			if (fActiveCollectionIndex < 0) {
-				fStatusLabel->SetText("No active collection - create one first");
+				(new BAlert("save", "No active collections - create one first", "OK"))->Go();
 				break;
 			}
 
@@ -733,74 +736,6 @@ MainWindow::QuitRequested()
 {
 	be_app->PostMessage(B_QUIT_REQUESTED);
 	return true;
-}
-
-
-BMenuBar*
-MainWindow::_BuildMenu()
-{
-	BMenuBar* menuBar = new BMenuBar("menubar");
-	BMenu* menu;
-	BMenuItem* item;
-
-	// App menu
-	menu = new BMenu("");
-	item = new BMenuItem(B_TRANSLATE("About" B_UTF8_ELLIPSIS), new BMessage(B_ABOUT_REQUESTED));
-	item->SetTarget(be_app);
-	menu->AddItem(item);
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Help" B_UTF8_ELLIPSIS), new BMessage(M_SHOW_HELP), 'H'));
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Report a bug" B_UTF8_ELLIPSIS), new BMessage(M_REPORT_A_BUG)));
-	menu->AddSeparatorItem();
-	menu->AddItem(new BMenuItem(B_TRANSLATE("Settings" B_UTF8_ELLIPSIS),
-		new BMessage(M_SHOW_SETTINGS), ',', B_COMMAND_KEY));
-	menu->AddSeparatorItem();
-	menu->AddItem(new BMenuItem(B_TRANSLATE("Quit"), new BMessage(B_QUIT_REQUESTED), 'Q'));
-
-	IconMenuItem* iconMenu = new IconMenuItem(menu, NULL, kApplicationSignature, B_MINI_ICON);
-	menuBar->AddItem(iconMenu);
-
-	// File menu
-	menu = new BMenu(B_TRANSLATE("File"));
-
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Import" B_UTF8_ELLIPSIS), new BMessage(M_NOT_IMPLEMENTED)));
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Export" B_UTF8_ELLIPSIS), new BMessage(M_NOT_IMPLEMENTED)));
-	menu->AddSeparatorItem();
-	menu->AddItem(new BMenuItem(B_TRANSLATE("Close"), new BMessage(B_QUIT_REQUESTED)));
-
-	menuBar->AddItem(menu);
-
-	// Request menu
-	menu = new BMenu(B_TRANSLATE("Request"));
-
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Send request"), new BMessage(M_SEND_REQUEST), B_ENTER));
-
-	menu->AddItem(new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_NEW_REQUEST), 'N'));
-	menu->AddSeparatorItem();
-
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Clear response"), new BMessage(M_CLEAR_RESPONSE), 'D'));
-
-	menuBar->AddItem(menu);
-
-	// View menu
-	menu = new BMenu(B_TRANSLATE("View"));
-
-	fTogglePreview
-		= new BMenuItem(B_TRANSLATE("Show preview"), new BMessage(M_TOGGLE_PREVIEW), 'P');
-	menu->AddItem(fTogglePreview);
-
-	fToggleSidebar
-		= new BMenuItem(B_TRANSLATE("Show sidebar"), new BMessage(M_TOGGLE_SIDEBAR), 'H');
-	menu->AddItem(fToggleSidebar);
-
-	menuBar->AddItem(menu);
-
-	return menuBar;
 }
 
 
@@ -1169,8 +1104,8 @@ MainWindow::_SaveSettings()
 	BMessage settings;
 	settings.AddRect("main_window_rect", Frame());
 
-	settings.AddBool("showPreview", fTogglePreview->IsMarked());
-	settings.AddBool("showSidebar", fToggleSidebar->IsMarked());
+	settings.AddBool("showPreview", fMenuBar->TogglePreview()->IsMarked());
+	settings.AddBool("showSidebar", fMenuBar->ToggleSidebar()->IsMarked());
 
 	// save current values
 	BMenuItem* marked = fMethodMenu->FindMarked();
@@ -1214,13 +1149,13 @@ MainWindow::_RestoreValues(BMessage& settings)
 	bool showPreview;
 	if (settings.FindBool("showPreview", &showPreview) == B_OK) {
 		fRequestAreaSplit->SetItemCollapsed(1, !showPreview);
-		fTogglePreview->SetMarked(showPreview);
+		fMenuBar->TogglePreview()->SetMarked(showPreview);
 	}
 
 	bool showSidebar;
 	if (settings.FindBool("showSidebar", &showSidebar) == B_OK) {
 		fOuterSplit->SetItemCollapsed(1, !showSidebar);
-		fToggleSidebar->SetMarked(showSidebar);
+		fMenuBar->ToggleSidebar()->SetMarked(showSidebar);
 	}
 
 	// Restore fields
@@ -1486,7 +1421,7 @@ MainWindow::_LoadCollectionsIndex()
 void
 MainWindow::_RefreshCollectionMenu()
 {
-	for (int32 i = fCollectionMenu->CountItems() - 1; i >= 0; i--)
+	for (int32 i = fCollectionMenu->CountItems() - 1; i >= 0; --i)
 		delete fCollectionMenu->RemoveItem(i);
 
 	for (int32 i = 0; i < fCollections.CountItems(); ++i) {
