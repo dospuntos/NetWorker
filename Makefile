@@ -30,6 +30,8 @@ APP_MIME_SIG = application/x-vnd.jpw-NetWorker
 #	same name (source.c or source.cpp) are included from different directories.
 #	Also note that spaces in folder names do not work well with this Makefile.
 SRCS =  src/App.cpp \
+		src/AppSettings.cpp \
+		src/SettingsWindow.cpp \
 		src/MainWindow.cpp \
 		src/HistoryItem.cpp \
 		src/Constants.cpp \

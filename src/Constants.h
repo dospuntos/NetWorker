@@ -14,12 +14,15 @@ extern const char* kSettingsFile;
 extern const char* kSettingsDirName;
 extern const char* kCollectionsDirName;
 extern const char* kCollectionsIndexFileName;
+extern const char* kPreferencesFileName;
 
 enum {
 	M_NEW_FILE = 'fnew',
 	M_SHOW_HELP = 'help',
 	M_REPORT_A_BUG = 'bugs',
 	M_SHOW_SETTINGS = 'stng',
+	M_SETTINGS_CHANGED = 'stch',
+	M_SETTINGS_WINDOW_CLOSED = 'stcl',
 	M_NOT_IMPLEMENTED = 'nimp',
 	M_TOGGLE_PREVIEW = 'tprv',
 	M_TOGGLE_SIDEBAR = 'tsbr',
@@ -61,7 +64,8 @@ enum {
 	M_LOAD_COLLECTION_ITEM = 'lcit',
 	M_SHOW_RENAME_COLLECTION_ITEM = 'srci',
 	M_RENAME_COLLECTION_ITEM = 'rnci',
-	M_DELETE_COLLECTION_ITEM = 'dcit'
+	M_DELETE_COLLECTION_ITEM = 'dcit',
+
 };
 
 

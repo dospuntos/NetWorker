@@ -150,6 +150,9 @@ MainWindow::MainWindow()
 	fSession(BHttpSession()),
 	fActiveCollectionIndex(-1)
 {
+	fAppSettings = new AppSettings();
+	fAppSettings->Load();
+
 	fMenuBar = new MenuBar();
 	_BuildLayout();
 
@@ -171,10 +174,14 @@ MainWindow::~MainWindow()
 
 	_SaveSettings();
 
+	if (fSettingsWindow != nullptr)
+		fSettingsWindow->PostMessage(B_QUIT_REQUESTED);
+
 	delete fAuthPanel;
 	delete fBodyPanel;
 	delete fQueryParamsEditor;
 	delete fHeadersPanel;
+	delete fAppSettings;
 }
 
 
@@ -713,6 +720,22 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_SHOW_SETTINGS:
+		{
+			if (fSettingsWindow == nullptr) {
+				fSettingsWindow = new SettingsWindow(fAppSettings, BMessenger(this));
+				fSettingsWindow->CenterIn(Frame());
+			}
+			fSettingsWindow->Show();
+			if (fSettingsWindow->IsHidden() == false)
+				fSettingsWindow->Activate();
+			break;
+		}
+
+		case M_SETTINGS_WINDOW_CLOSED:
+			fSettingsWindow = nullptr;
+			break;
+
 		case B_ABOUT_REQUESTED:
 			be_app->AboutRequested();
 			break;
@@ -1107,25 +1130,32 @@ MainWindow::_SaveSettings()
 	settings.AddBool("showPreview", fMenuBar->TogglePreview()->IsMarked());
 	settings.AddBool("showSidebar", fMenuBar->ToggleSidebar()->IsMarked());
 
-	// save current values
-	BMenuItem* marked = fMethodMenu->FindMarked();
-	BString method = marked ? marked->Label() : "GET";
+	if (fAppSettings->fSaveFieldsOnExit) {
+		// save current values
+		BMenuItem* marked = fMethodMenu->FindMarked();
+		BString method = marked ? marked->Label() : "GET";
 
-	RequestData current(method, fUrlField->Text(), fHeadersPanel->CurrentHeaders(),
-		fBodyPanel->CurrentBody(), fBodyPanel->FormEditor()->CurrentValues(),
-		fQueryParamsEditor->CurrentValues(), fBodyPanel->CurrentMode(),
-		fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(), fAuthPanel->CurrentValues());
+		RequestData current(method, fUrlField->Text(), fHeadersPanel->CurrentHeaders(),
+			fBodyPanel->CurrentBody(), fBodyPanel->FormEditor()->CurrentValues(),
+			fQueryParamsEditor->CurrentValues(), fBodyPanel->CurrentMode(),
+			fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(), fAuthPanel->CurrentValues());
 
-	BMessage currentArchive;
-	current.Archive(currentArchive);
-	settings.AddMessage("currentRequest", &currentArchive);
+		BMessage currentArchive;
+		current.Archive(currentArchive);
+		settings.AddMessage("currentRequest", &currentArchive);
 
-	// save history
-	for (int32 i = 0; i < fHistoryPanel->CountItems(); ++i) {
-		auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(i));
-		BMessage itemArchive;
-		item->Archive(itemArchive);
-		settings.AddMessage("historyItem", &itemArchive);
+		// save history
+		for (int32 i = 0; i < fHistoryPanel->CountItems(); ++i) {
+			auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(i));
+			BMessage itemArchive;
+			item->Archive(itemArchive);
+			settings.AddMessage("historyItem", &itemArchive);
+		}
+	} else {
+		// Remove existing data if any, and erase history
+		fHistoryPanel->MakeEmpty();
+		PostMessage(M_NEW_REQUEST);
+		_SaveSettings();
 	}
 
 	if (status == B_OK)
@@ -1158,20 +1188,22 @@ MainWindow::_RestoreValues(BMessage& settings)
 		fMenuBar->ToggleSidebar()->SetMarked(showSidebar);
 	}
 
-	// Restore fields
-	BMessage currentArchive;
-	if (settings.FindMessage("currentRequest", &currentArchive) == B_OK) {
-		RequestData current(currentArchive);
-		_LoadRequestData(current);
-	}
+	if (fAppSettings->fSaveFieldsOnExit) {
+		// Restore fields
+		BMessage currentArchive;
+		if (settings.FindMessage("currentRequest", &currentArchive) == B_OK) {
+			RequestData current(currentArchive);
+			_LoadRequestData(current);
+		}
 
-	// Restore history
-	fHistoryPanel->MakeEmpty(); // just in case
+		// Restore history
+		fHistoryPanel->MakeEmpty(); // just in case
 
-	BMessage itemArchive;
-	for (int32 i = 0; settings.FindMessage("historyItem", i, &itemArchive) == B_OK; ++i) {
-		fHistoryPanel->AddItem(new HistoryItem(itemArchive));
-		itemArchive.MakeEmpty();
+		BMessage itemArchive;
+		for (int32 i = 0; settings.FindMessage("historyItem", i, &itemArchive) == B_OK; ++i) {
+			fHistoryPanel->AddItem(new HistoryItem(itemArchive));
+			itemArchive.MakeEmpty();
+		}
 	}
 	_UpdateHistoryButtons();
 }

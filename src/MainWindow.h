@@ -6,12 +6,14 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "AppSettings.h"
 #include "AuthPanel.h"
 #include "BodyPanel.h"
 #include "Collection.h"
 #include "HeadersPanel.h"
 #include "KeyValueEditor.h"
 #include "MenuBar.h"
+#include "SettingsWindow.h"
 #include <optional>
 
 #include <ColumnListView.h>
@@ -57,6 +59,8 @@ private:
 	void        		_SendRequest();
 	void        		_ClearResponse();
 
+	AppSettings* 		fAppSettings;
+	SettingsWindow* 	fSettingsWindow;
 	MenuBar*			fMenuBar;
     BPopUpMenu*         fMethodMenu;
     BMenuField*         fMethodField;

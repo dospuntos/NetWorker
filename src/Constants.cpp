@@ -15,3 +15,4 @@ const char* kSettingsDirName = "NetWorker";
 const char* kSettingsFile = "NetWorker_settings";
 const char* kCollectionsDirName = "collections";
 const char* kCollectionsIndexFileName = "collections-index";
+const char* kPreferencesFileName = "preferences";
