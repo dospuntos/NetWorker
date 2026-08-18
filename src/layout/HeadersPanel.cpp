@@ -224,3 +224,32 @@ HeadersPanel::SetComputedHeaders(const BMessage& headers)
 		h.MakeEmpty();
 	}
 }
+
+
+bool
+HeadersPanel::HasCustomHeader(const BString& key) const
+{
+	for (int32 i = 0; i < fList->CountRows(); ++i) {
+		auto* row = static_cast<HeaderRow*>(fList->RowAt(i));
+		if (!row->fIsCustom)
+			continue;
+
+		auto* keyField = static_cast<BStringField*>(row->GetField(0));
+		if (key.ICompare(keyField->String()) == 0)
+			return true;
+	}
+	return false;
+}
+
+
+void
+HeadersPanel::AddCustomHeaderIfMissing(const BString& key, const BString& value)
+{
+	if (value.Length() == 0 || HasCustomHeader(key))
+		return;
+
+	HeaderRow* row = new HeaderRow(true);
+	row->SetField(new HeaderStringField(key.String(), false), 0);
+	row->SetField(new HeaderStringField(value.String(), false), 1);
+	fList->AddRow(row);
+}

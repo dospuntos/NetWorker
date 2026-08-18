@@ -118,6 +118,8 @@ private:
 	BString _BuildFullUrl() const;
 	BMessage _ComputedHeaders() const;
 	HeadersPanel* fHeadersPanel;
+
+	void _ApplyDefaultUserAgent();
 };
 
 #endif

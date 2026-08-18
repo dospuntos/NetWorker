@@ -30,6 +30,8 @@ public:
     void LoadFrom(const BMessage& headers);
 
     void SetComputedHeaders(const BMessage& headers);
+	bool HasCustomHeader(const BString& key) const;
+	void AddCustomHeaderIfMissing(const BString& key, const BString& value);
 
 private:
     BView*            fView;

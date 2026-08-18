@@ -164,6 +164,7 @@ MainWindow::MainWindow()
 	_LoadCollectionsIndex();
 	_RefreshCollectionMenu();
 	_RefreshCollectionItemList();
+	_ApplyDefaultUserAgent();
 }
 
 
@@ -199,6 +200,7 @@ MainWindow::MessageReceived(BMessage* message)
 			RequestData data;
 			_LoadRequestData(data);
 			_UpdatePreview();
+			_ApplyDefaultUserAgent();
 			break;
 		}
 		case M_SEND_REQUEST:
@@ -1554,4 +1556,14 @@ MainWindow::_ComputedHeaders() const
 	}
 
 	return headers;
+}
+
+
+void
+MainWindow::_ApplyDefaultUserAgent()
+{
+	if (fAppSettings->fDefaultUserAgent.Length() > 0) {
+		fHeadersPanel->AddCustomHeaderIfMissing("User-Agent", fAppSettings->fDefaultUserAgent);
+		_UpdatePreview();
+	}
 }
