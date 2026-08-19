@@ -7,6 +7,7 @@
 #define SETTINGS_WINDOW_H
 
 #include <Messenger.h>
+#include <Spinner.h>
 #include <Window.h>
 
 class AppSettings;
@@ -34,11 +35,11 @@ private:
 
     BCheckBox*     fSaveOnExitCheck;
     BTextControl*  fUserAgentField;
-    BTextControl*  fTimeoutField;
-    BTextControl*  fMaxHistoryField;
+    BSpinner*	   fTimeoutField;
+    BSpinner*  	   fMaxHistoryField;
     BCheckBox*     fVerifySSLCheck;
     BCheckBox*     fFollowRedirectsCheck;
-    BTextControl*  fMaxResponseSizeField;
+    BSpinner*	   fMaxResponseSizeField;
     BCheckBox*     fWordWrapCheck;
 };
 

@@ -18,7 +18,7 @@ RenameWindow::RenameWindow(BRect frame, const BString& initialText, int32 itemIn
 	const BMessenger& target, uint32 resultWhat)
 	:
 	BWindow(frame, "Rename", B_TITLED_WINDOW,
-		B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_AUTO_UPDATE_SIZE_LIMITS),
+		B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_AUTO_UPDATE_SIZE_LIMITS | B_CLOSE_ON_ESCAPE),
 	fItemIndex(itemIndex),
 	fTarget(target),
 	fResultWhat(resultWhat)
@@ -38,8 +38,6 @@ RenameWindow::RenameWindow(BRect frame, const BString& initialText, int32 itemIn
 			.Add(okButton)
 			.End()
 		.End();
-
-	AddShortcut(B_ESCAPE, 0, new BMessage(M_RENAME_CANCEL));
 
 	fTextField->MakeFocus(true);
 	fTextField->TextView()->SelectAll();

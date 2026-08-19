@@ -39,6 +39,7 @@ class BTextControl;
 class BScrollView;
 class BStringView;
 class BSplitView;
+class BMessageRunner;
 
 
 class MainWindow : public BWindow {
@@ -99,9 +100,12 @@ private:
 
 	BObjectList<Collection, true> fCollections;
 	int32            fActiveCollectionIndex;
+	BMessageRunner* fRequestTimeoutRunner = nullptr;
+	void _StopRequestTimeout();
+	void _CancelCurrentRequest();
 
 	status_t _SaveSettings();
-	status_t	_LoadSettings(BMessage& settings);
+	status_t _LoadSettings(BMessage& settings);
 	void _RestoreValues(BMessage& settings);
 	void _LoadRequestData(const RequestData& data);
 	void _UpdateHistoryButtons();
@@ -119,7 +123,9 @@ private:
 	BMessage _ComputedHeaders() const;
 	HeadersPanel* fHeadersPanel;
 
+	void _ApplySettings();
 	void _ApplyDefaultUserAgent();
+	void _TrimHistory();
 };
 
 #endif

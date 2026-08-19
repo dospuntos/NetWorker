@@ -29,6 +29,7 @@
 #include <LayoutBuilder.h>
 #include <MenuField.h>
 #include <MenuItem.h>
+#include <MessageRunner.h>
 #include <Messenger.h>
 #include <NetServicesDefs.h>
 #include <PopUpMenu.h>
@@ -214,12 +215,26 @@ MainWindow::MessageReceived(BMessage* message)
 			_SendRequest();
 			break;
 
+		case M_REQUEST_TIMEOUT:
+		{
+			if (!fCurrentResult.has_value())
+				break;
+
+			_CancelCurrentRequest();
+
+			fStatusLabel->SetText("Request timed out");
+			fSendButton->SetLabel("Send");
+			break;
+		}
+
 		case M_CLEAR_RESPONSE:
 			_ClearResponse();
 			break;
 
 		case RequestCompleted:
 		{
+			_StopRequestTimeout();
+
 			int id = message->GetInt32(Id, -1);
 			bool ok = message->GetBool(Success, false);
 
@@ -262,10 +277,18 @@ MainWindow::MessageReceived(BMessage* message)
 			}
 
 			auto& body = fCurrentResult->Body();
-			if (body.text.has_value())
-				fResponseBodyView->SetText(body.text->String());
-			else
+			if (body.text.has_value()) {
+				BString bodyText(body.text->String());
+				int32 length = bodyText.Length();
+
+				if (fAppSettings->fMaxResponseSize > 0 && length > fAppSettings->fMaxResponseSize) {
+					bodyText.Truncate(fAppSettings->fMaxResponseSize);
+					bodyText << "\n\n[Response length truncated, adjust the limit in Settings.]";
+				}
+				fResponseBodyView->SetText(bodyText);
+			} else {
 				fResponseBodyView->SetText("(no body)");
+			}
 
 			fSendButton->SetLabel("Send");
 			fCurrentResult.reset();
@@ -477,11 +500,11 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_CLEAR_HISTORY:
 		{
 			BAlert* alert = new BAlert("Clear history",
-				"Remove all items from the request history? This cannot be undone.", "Clear",
-				nullptr, "Cancel", B_WIDTH_FROM_WIDEST, B_OFFSET_SPACING, B_WARNING_ALERT);
+				"Remove all items from the request history? This cannot be undone.", "Cancel",
+				"Clear", nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
 
-			alert->SetShortcut(2, B_ESCAPE);
-			if (alert->Go() == 0) {
+			alert->SetShortcut(0, B_ESCAPE);
+			if (alert->Go() == 1) {
 				fHistoryPanel->MakeEmpty();
 				_SaveSettings(); // Avoid stale history on disk
 			}
@@ -734,6 +757,10 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_SETTINGS_APPLIED:
+			_ApplySettings();
+			break;
+
 		case M_SETTINGS_WINDOW_CLOSED:
 			fSettingsWindow = nullptr;
 			break;
@@ -773,8 +800,8 @@ MainWindow::_BuildPreviewPanel()
 	BStringView* previewLabel = new BStringView("previewLabel", "Request preview");
 	previewLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
 
-	fPreviewPanelScroll = new BScrollView("previewScroll", fPreviewPanel,
-		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
+	fPreviewPanelScroll
+		= new BScrollView("previewScroll", fPreviewPanel, B_WILL_DRAW | B_FRAME_EVENTS, true, true);
 
 	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 		.SetInsets(B_USE_WINDOW_INSETS)
@@ -1052,6 +1079,7 @@ MainWindow::_SendRequest()
 		}
 	}
 	fHistoryPanel->AddItem(newItem, 0); // newest on top
+	_TrimHistory();
 	_UpdateHistoryButtons();
 
 	// Send request
@@ -1061,6 +1089,14 @@ MainWindow::_SendRequest()
 	fStatusLabel->SetText("Sending" B_UTF8_ELLIPSIS);
 	fResponseHeadersList->Clear();
 	fResponseBodyView->SetText("");
+
+	// Manual timeout
+	if (fAppSettings->fTimeoutSeconds > 0) {
+		bigtime_t interval = static_cast<bigtime_t>(fAppSettings->fTimeoutSeconds) * 1000000;
+
+		fRequestTimeoutRunner
+			= new BMessageRunner(BMessenger(this), new BMessage(M_REQUEST_TIMEOUT), interval, 1);
+	}
 }
 
 
@@ -1560,10 +1596,51 @@ MainWindow::_ComputedHeaders() const
 
 
 void
+MainWindow::_ApplySettings()
+{
+	fResponseBodyView->SetWordWrap(fAppSettings->fWordWrap);
+	fPreviewPanel->SetWordWrap(fAppSettings->fWordWrap);
+	_TrimHistory();
+}
+
+
+void
 MainWindow::_ApplyDefaultUserAgent()
 {
 	if (fAppSettings->fDefaultUserAgent.Length() > 0) {
 		fHeadersPanel->AddCustomHeaderIfMissing("User-Agent", fAppSettings->fDefaultUserAgent);
 		_UpdatePreview();
 	}
+}
+
+
+void
+MainWindow::_TrimHistory()
+{
+	while (fHistoryPanel->CountItems() > fAppSettings->fMaxHistoryItems) {
+		BListItem* item = fHistoryPanel->RemoveItem(fHistoryPanel->CountItems() - 1);
+		delete item;
+	}
+	_UpdateHistoryButtons();
+}
+
+
+void
+MainWindow::_CancelCurrentRequest()
+{
+	if (!fCurrentResult.has_value())
+		return;
+
+	fSession.Cancel(fCurrentResult.value());
+	fCurrentResult.reset();
+
+	_StopRequestTimeout();
+}
+
+
+void
+MainWindow::_StopRequestTimeout()
+{
+	delete fRequestTimeoutRunner;
+	fRequestTimeoutRunner = nullptr;
 }
