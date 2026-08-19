@@ -34,10 +34,11 @@ public:
     void ShowFilePanel(BHandler* target, uint32 refsReceivedWhat);
     void SetFilePath(const BString& path);
 
-    BString CurrentMode() const;       // none - raw - form - (TODO: file)
-    BString CurrentBody() const;       // raw text. form-encoded, or file contents
+    BString CurrentMode() const;       // none - raw - form - file
+    BString CurrentBody() const;       // raw text, form-encoded, or file contents
     BString CurrentContentType() const;
     BString CurrentFilePath() const { return fFilePath; }
+	int32 CurrentBodyLength() const;
 
     void LoadFrom(const BString& mode, const BString& rawBody,
         const BMessage& formParams, const BString& filePath);
@@ -50,6 +51,7 @@ private:
     BButton*        fBrowseButton;
     BFilePanel*     fFilePanel;
     BString         fFilePath;
+	BString 		fFileContent;
 };
 
 #endif // BODY_PANEL_H

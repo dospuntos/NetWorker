@@ -69,7 +69,7 @@ BodyPanel::BodyPanel()
 	fFilePathField = new BTextControl("bodyFilePath", "File", "", nullptr);
 	fFilePathField->SetEnabled(false); // path is set via Browse, not typed
 	fBrowseButton
-		= new BButton("bodyBrowse", "Browse" B_UTF8_ELLIPSIS, new BMessage(M_NOT_IMPLEMENTED));
+		= new BButton("bodyBrowse", "Browse" B_UTF8_ELLIPSIS, new BMessage(M_SHOW_BODY_FILE_PANEL));
 	BView* fileCard = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 						  .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
 							  .Add(fFilePathField)
@@ -110,6 +110,7 @@ BodyPanel::ShowFilePanel(BHandler* target, uint32 refsReceivedWhat)
 		BMessenger messenger(target);
 		fFilePanel = new BFilePanel(B_OPEN_PANEL, &messenger, nullptr, 0, false);
 	}
+	fFilePanel->SetMessage(new BMessage(refsReceivedWhat));
 	fFilePanel->Show();
 }
 
@@ -119,6 +120,18 @@ BodyPanel::SetFilePath(const BString& path)
 {
 	fFilePath = path;
 	fFilePathField->SetText(path.String());
+
+	fFileContent = "";
+	if (path.Length() > 0) {
+		BFile file(path.String(), B_READ_ONLY);
+		if (file.InitCheck() == B_OK) {
+			off_t size = 0;
+			file.GetSize(&size);
+			char* buffer = fFileContent.LockBuffer((int32)size);
+			file.Read(buffer, size);
+			fFileContent.UnlockBuffer((int32)size);
+		}
+	}
 }
 
 
@@ -150,18 +163,7 @@ BodyPanel::CurrentBody() const
 		return fFormEditor->FormEncodedValues();
 
 	} else if (mode == "file") {
-		if (fFilePath.Length() == 0)
-			return "";
-		BFile file(fFilePath.String(), B_READ_ONLY);
-		if (file.InitCheck() != B_OK)
-			return "";
-		off_t size = 0;
-		file.GetSize(&size);
-		BString content;
-		char* buffer = content.LockBuffer((int32)size);
-		file.Read(buffer, size);
-		content.UnlockBuffer((int32)size);
-		return content;
+		return fFileContent;
 	}
 
 	return ""; // none
@@ -189,6 +191,16 @@ BodyPanel::CurrentContentType() const
 	}
 
 	return ""; // none
+}
+
+
+int32
+BodyPanel::CurrentBodyLength() const
+{
+	BString mode = CurrentMode();
+	if (mode == "file")
+		return fFileContent.Length();
+	return CurrentBody().Length();
 }
 
 

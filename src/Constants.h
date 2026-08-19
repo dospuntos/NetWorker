@@ -44,6 +44,7 @@ enum {
 	M_QUERY_PARAM_SELECT = 'fqsl',
 	M_BODY_MODE_CHANGED = 'bmch',
 	M_BODY_FILE_SELECTED = 'bfsl',
+	M_SHOW_BODY_FILE_PANEL = 'sfpn',
 	M_AUTH_TYPE_CHANGED = 'auth',
 	M_SELECT_HISTORY = 'hsel',
 	M_DELETE_HISTORY_ITEM = 'dhis',

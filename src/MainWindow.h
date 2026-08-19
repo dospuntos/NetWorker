@@ -126,6 +126,7 @@ private:
 	void _ApplySettings();
 	void _ApplyDefaultUserAgent();
 	void _TrimHistory();
+	BString _FormatFileSize(int64 bytes);
 };
 
 #endif

@@ -702,6 +702,10 @@ MainWindow::MessageReceived(BMessage* message)
 			_UpdatePreview();
 			break;
 
+		case M_SHOW_BODY_FILE_PANEL:
+			fBodyPanel->ShowFilePanel(this, M_BODY_FILE_SELECTED);
+			break;
+
 		case M_BODY_FILE_SELECTED:
 		{
 			entry_ref ref;
@@ -1321,11 +1325,21 @@ MainWindow::_UpdatePreview()
 	bool bodyAllowed = (method != "GET" && method != "HEAD" && mode != "none");
 
 	if (bodyAllowed) {
-		BString body = fBodyPanel->CurrentBody();
-		if (body.Length() > 0) {
-			preview << "Content-Type: " << fBodyPanel->CurrentContentType() << "\n";
-			preview << "Content-Length: " << body.Length() << "\n\n";
-			preview << body;
+		if (mode == "file") {
+			BString path = fBodyPanel->CurrentFilePath();
+			if (path.Length() > 0) {
+				preview << "Content-Type: " << fBodyPanel->CurrentContentType() << "\n";
+				preview << "Content-Length: " << fBodyPanel->CurrentBodyLength() << "\n\n";
+				preview << "[File: " << path << ", "
+						<< _FormatFileSize(fBodyPanel->CurrentBodyLength()) << "]";
+			}
+		} else {
+			BString body = fBodyPanel->CurrentBody();
+			if (body.Length() > 0) {
+				preview << "Content-Type: " << fBodyPanel->CurrentContentType() << "\n";
+				preview << "Content-Length: " << body.Length() << "\n\n";
+				preview << body;
+			}
 		}
 	}
 
@@ -1643,4 +1657,18 @@ MainWindow::_StopRequestTimeout()
 {
 	delete fRequestTimeoutRunner;
 	fRequestTimeoutRunner = nullptr;
+}
+
+
+BString
+MainWindow::_FormatFileSize(int64 bytes)
+{
+	BString result;
+	if (bytes < 1024)
+		result << bytes << " B";
+	else if (bytes < 1024 * 1024)
+		result << (bytes / 1024.0f) << " KB";
+	else
+		result << (bytes / (1024.0f * 1024.0f)) << " MB";
+	return result;
 }
