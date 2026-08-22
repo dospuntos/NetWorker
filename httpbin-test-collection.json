@@ -1,0 +1,241 @@
+{
+  "meta": {
+    "format": "networker",
+    "version": "1.0"
+  },
+  "collection": {
+    "name": "httpbin.org Tests",
+    "requests": [
+      {
+        "label": "GET - Basic request",
+        "method": "GET",
+        "url": "https://httpbin.org/get",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "GET - With query params",
+        "method": "GET",
+        "url": "https://httpbin.org/get",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [
+          { "key": "search", "value": "networker" },
+          { "key": "page", "value": "1" }
+        ],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "POST - Raw JSON body",
+        "method": "POST",
+        "url": "https://httpbin.org/post",
+        "bodyMode": "raw",
+        "body": "{\"name\": \"NetWorker\", \"type\": \"REST client\"}",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "POST - Form encoded",
+        "method": "POST",
+        "url": "https://httpbin.org/post",
+        "bodyMode": "form",
+        "body": "",
+        "filePath": "",
+        "params": [
+          { "key": "username", "value": "tester" },
+          { "key": "password", "value": "secret" }
+        ],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "PUT - Update resource",
+        "method": "PUT",
+        "url": "https://httpbin.org/put",
+        "bodyMode": "raw",
+        "body": "{\"status\": \"updated\"}",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "PATCH - Partial update",
+        "method": "PATCH",
+        "url": "https://httpbin.org/patch",
+        "bodyMode": "raw",
+        "body": "{\"status\": \"patched\"}",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "DELETE - Remove resource",
+        "method": "DELETE",
+        "url": "https://httpbin.org/delete",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "Auth - Basic (user/pass)",
+        "method": "GET",
+        "url": "https://httpbin.org/basic-auth/user/pass",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "basic",
+        "authValues": { "username": "user", "password": "pass" }
+      },
+      {
+        "label": "Auth - Bearer token",
+        "method": "GET",
+        "url": "https://httpbin.org/bearer",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "bearer",
+        "authValues": { "token": "test-token-123" }
+      },
+      {
+        "label": "Headers - Custom headers echoed back",
+        "method": "GET",
+        "url": "https://httpbin.org/headers",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [
+          { "key": "X-Test-Header", "value": "NetWorker" },
+          { "key": "X-Client-Version", "value": "1.0" }
+        ],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "Status - 404 Not Found",
+        "method": "GET",
+        "url": "https://httpbin.org/status/404",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "Status - 500 Server Error",
+        "method": "GET",
+        "url": "https://httpbin.org/status/500",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "Redirect - Follows 2 redirects",
+        "method": "GET",
+        "url": "https://httpbin.org/redirect/2",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "Delay - 3 second response",
+        "method": "GET",
+        "url": "https://httpbin.org/delay/3",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "JSON - Fixed sample response",
+        "method": "GET",
+        "url": "https://httpbin.org/json",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "Utility - Random UUID",
+        "method": "GET",
+        "url": "https://httpbin.org/uuid",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      },
+      {
+        "label": "Utility - Your origin IP",
+        "method": "GET",
+        "url": "https://httpbin.org/ip",
+        "bodyMode": "none",
+        "body": "",
+        "filePath": "",
+        "params": [],
+        "queryParams": [],
+        "customHeaders": [],
+        "authType": "none",
+        "authValues": {}
+      }
+    ]
+  }
+}
