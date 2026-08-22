@@ -69,9 +69,9 @@ MenuBar::MenuBar()
 	menu->AddSeparatorItem();
 
 	menu->AddItem(new BMenuItem(B_TRANSLATE("Import collection" B_UTF8_ELLIPSIS),
-		new BMessage(M_NOT_IMPLEMENTED)));
+		new BMessage(M_IMPORT_COLLECTION)));
 	menu->AddItem(new BMenuItem(B_TRANSLATE("Export collection" B_UTF8_ELLIPSIS),
-		new BMessage(M_NOT_IMPLEMENTED)));
+		new BMessage(M_EXPORT_COLLECTION)));
 
 	AddItem(menu);
 
@@ -84,6 +84,7 @@ MenuBar::MenuBar()
 
 	fToggleSidebar
 		= new BMenuItem(B_TRANSLATE("Show sidebar"), new BMessage(M_TOGGLE_SIDEBAR), 'B');
+	fToggleSidebar->SetMarked(true);
 	menu->AddItem(fToggleSidebar);
 
 	AddItem(menu);

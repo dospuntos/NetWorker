@@ -45,7 +45,11 @@ SRCS =  src/App.cpp \
 		src/layout/RenameWindow.cpp \
 		src/layout/AuthPanel.cpp \
 		src/layout/HeadersPanel.cpp \
-		src/layout/MenuBar.cpp
+		src/layout/MenuBar.cpp \
+		src/CollectionExporter.cpp \
+		src/CollectionImporter.cpp
+
+CXXFLAGS += -Ithird_party
 
 #	Specify the resource definition files to use. Full or relative paths can be
 #	used.

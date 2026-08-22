@@ -5,10 +5,13 @@
 
 #include "MainWindow.h"
 #include "Collection.h"
+#include "CollectionExporter.h"
+#include "CollectionImporter.h"
 #include "Constants.h"
 #include "HistoryItem.h"
 #include "RenameWindow.h"
 
+#include <FilePanel.h>
 #include <RadioButton.h>
 
 #include <Alert.h>
@@ -149,7 +152,10 @@ MainWindow::MainWindow()
 	BWindow(BRect(100, 100, 900, 660), kApplicationName, B_TITLED_WINDOW,
 		B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE),
 	fSession(BHttpSession()),
-	fActiveCollectionIndex(-1)
+	fActiveCollectionIndex(-1),
+	fExportFilePanel(nullptr),
+	fImportFilePanel(nullptr),
+	fPendingExportCollection(nullptr)
 {
 	fAppSettings = new AppSettings();
 	fAppSettings->Load();
@@ -184,6 +190,8 @@ MainWindow::~MainWindow()
 	delete fQueryParamsEditor;
 	delete fHeadersPanel;
 	delete fAppSettings;
+	delete fExportFilePanel;
+	delete fImportFilePanel;
 }
 
 
@@ -597,7 +605,9 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_SAVE_TO_COLLECTION:
 		{
 			if (fActiveCollectionIndex < 0) {
-				(new BAlert("save", "No active collections - create one first", "OK"))->Go();
+				BAlert* alert = new BAlert("save", "No active collection - create one first", "OK");
+				alert->SetShortcut(0, B_ESCAPE);
+				alert->Go();
 				break;
 			}
 
@@ -694,6 +704,101 @@ MainWindow::MessageReceived(BMessage* message)
 			delete removed;
 			_SaveCollection(collection);
 			_RefreshCollectionItemList();
+			break;
+		}
+
+		case M_EXPORT_COLLECTION:
+		{
+			if (fActiveCollectionIndex < 0) {
+				BAlert* alert
+					= new BAlert("export", "No active collections - create one first", "OK");
+				alert->SetShortcut(0, B_ESCAPE);
+				alert->Go();
+				break;
+			}
+
+			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+			if (collection == nullptr)
+				break;
+
+			if (fExportFilePanel == nullptr) {
+				BMessenger messenger(this);
+				fExportFilePanel = new BFilePanel(B_SAVE_PANEL, &messenger, nullptr, 0, false);
+			}
+			fExportFilePanel->SetMessage(new BMessage(M_EXPORT_COLLECTION_SAVE));
+
+			fPendingExportCollection = collection;
+
+			BString suggestedName = collection->Name();
+			suggestedName << ".json";
+			fExportFilePanel->SetSaveText(suggestedName.String());
+			fExportFilePanel->Show();
+			break;
+		}
+
+		case M_EXPORT_COLLECTION_SAVE:
+		{
+			entry_ref dirRef;
+			BString name;
+			if (message->FindRef("directory", &dirRef) != B_OK
+				|| message->FindString("name", &name) != B_OK) {
+				fPendingExportCollection = nullptr;
+				break;
+			}
+
+			if (fPendingExportCollection == nullptr)
+				break;
+
+			BPath dirPath(&dirRef);
+			BPath filePath(dirPath);
+			filePath.Append(name.String());
+
+			status_t status
+				= CollectionExporter::Export(fPendingExportCollection, BString(filePath.Path()));
+			fStatusLabel->SetText(status == B_OK ? "Collection exported" : "Export failed");
+
+			fPendingExportCollection = nullptr;
+			break;
+		}
+
+		case M_IMPORT_COLLECTION:
+		{
+			if (fImportFilePanel == nullptr) {
+				BMessenger messenger(this);
+				fImportFilePanel = new BFilePanel(B_OPEN_PANEL, &messenger, nullptr, 0, false);
+			}
+			fImportFilePanel->SetMessage(new BMessage(M_IMPORT_COLLECTION_SELECTED));
+			fImportFilePanel->Show();
+			break;
+		}
+
+		case M_IMPORT_COLLECTION_SELECTED:
+		{
+			entry_ref ref;
+			if (message->FindRef("refs", &ref) != B_OK)
+				break;
+
+			BPath path(&ref);
+
+			Collection* imported = nullptr;
+			BString error;
+			status_t status = CollectionImporter::Import(BString(path.Path()), imported, error);
+
+			if (status != B_OK) {
+				BAlert* alert = new BAlert("Import failed", error.String(), "OK");
+				alert->Go();
+				break;
+			}
+
+			fCollections.AddItem(imported);
+			fActiveCollectionIndex = fCollections.CountItems() - 1;
+
+			_SaveCollection(imported);
+			_SaveCollectionsIndex();
+			_RefreshCollectionMenu();
+			_RefreshCollectionItemList();
+
+			fStatusLabel->SetText("Collection imported");
 			break;
 		}
 
@@ -1169,8 +1274,8 @@ MainWindow::_SaveSettings()
 	BMessage settings;
 	settings.AddRect("main_window_rect", Frame());
 
-	settings.AddBool("showPreview", fMenuBar->TogglePreview()->IsMarked());
-	settings.AddBool("showSidebar", fMenuBar->ToggleSidebar()->IsMarked());
+	settings.AddBool("showPreview", !fRequestAreaSplit->IsItemCollapsed(1));
+	settings.AddBool("showSidebar", !fOuterSplit->IsItemCollapsed(1));
 
 	if (fAppSettings->fSaveFieldsOnExit) {
 		// save current values
@@ -1193,11 +1298,6 @@ MainWindow::_SaveSettings()
 			item->Archive(itemArchive);
 			settings.AddMessage("historyItem", &itemArchive);
 		}
-	} else {
-		// Remove existing data if any, and erase history
-		fHistoryPanel->MakeEmpty();
-		PostMessage(M_NEW_REQUEST);
-		_SaveSettings();
 	}
 
 	if (status == B_OK)

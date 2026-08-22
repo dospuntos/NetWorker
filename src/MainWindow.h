@@ -98,6 +98,10 @@ private:
 	BButton*         fNewCollectionButton;
 	BButton*         fDeleteCollectionButton;
 
+	BFilePanel* 	 fExportFilePanel;
+	BFilePanel*		 fImportFilePanel;
+	Collection* 	 fPendingExportCollection;
+
 	BObjectList<Collection, true> fCollections;
 	int32            fActiveCollectionIndex;
 	BMessageRunner* fRequestTimeoutRunner = nullptr;
