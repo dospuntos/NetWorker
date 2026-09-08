@@ -13,10 +13,11 @@ resource app_version {
 
 	internal = 0,
 
-	short_info = "A native REST API client for Haiku",
+	short_info = "A native REST API client",
 	long_info  = "NetWorker is a native REST API client. Send HTTP requests "
 				 "with custom methods, headers and body content, and view "
-				 "the response code, headers and body."
+				 "the response code, headers and body. Import and export "
+				 "JSON-encoded collections."
 };
 
 resource vector_icon {

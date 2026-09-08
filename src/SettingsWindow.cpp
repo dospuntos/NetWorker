@@ -68,8 +68,8 @@ SettingsWindow::_BuildGeneralPage()
 	fSaveOnExitCheck = new BCheckBox("saveOnExit", "Save fields and history on exit",
 		new BMessage(M_SETTINGS_CHANGED));
 	fSaveOnExitCheck->SetValue(fSettings->fSaveFieldsOnExit ? B_CONTROL_ON : B_CONTROL_OFF);
-
-	BStringView* warning = new BStringView("saveOnExitWarning",
+	fSaveOnExitCheck->SetToolTip(
+		"Save request fields and history when the application exits.\n"
 		"Warning: this saves request fields, including passwords,\n"
 		"tokens, and API keys, in a readable file on disk.\n"
 		"Collections are always saved in readable files on disk.");
@@ -77,28 +77,37 @@ SettingsWindow::_BuildGeneralPage()
 	fWordWrapCheck
 		= new BCheckBox("wordWrap", "Word wrap response/preview", new BMessage(M_SETTINGS_CHANGED));
 	fWordWrapCheck->SetValue(fSettings->fWordWrap ? B_CONTROL_ON : B_CONTROL_OFF);
+	fWordWrapCheck->SetToolTip("Wrap long lines in the response and preview views.");
 
 	fUserAgentField = new BTextControl("userAgent", "Default User-Agent",
 		fSettings->fDefaultUserAgent.String(), new BMessage(M_SETTINGS_CHANGED));
+	fUserAgentField->SetToolTip(
+		 "Default User-Agent header, used when none is set for the request. \n"
+		 "Can be changed for individual requests.");
 
 	fTimeoutField = new BSpinner("timeout", "Timeout (seconds)", new BMessage(M_SETTINGS_CHANGED));
 	fTimeoutField->SetMinValue(0);
 	fTimeoutField->SetValue(fSettings->fTimeoutSeconds);
+	fTimeoutField->SetToolTip(
+		"Maximum time to wait for a request to complete.\nSet to 0 to disable timeout.");
 
 	fMaxHistoryField
 		= new BSpinner("maxHistory", "Max history items", new BMessage(M_SETTINGS_CHANGED));
 	fMaxHistoryField->SetMinValue(0);
 	fMaxHistoryField->SetValue(fSettings->fMaxHistoryItems);
+	fMaxHistoryField->SetToolTip(
+		"Maximum number of requests kept in the history.\nSet to 0 for no limit.");
 
 	fMaxResponseSizeField = new BSpinner("maxResponseSize", "Max response size (MB)",
 		new BMessage(M_SETTINGS_CHANGED));
 	fMaxResponseSizeField->SetMinValue(0);
 	fMaxResponseSizeField->SetValue(fSettings->fMaxResponseSize / (1024 * 1024));
+	fMaxResponseSizeField->SetToolTip(
+		"Maximum response body size displayed by the application.\nSet to 0 for no limit.");
 
 	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 		.SetInsets(B_USE_WINDOW_INSETS)
 		.Add(fSaveOnExitCheck)
-		.Add(warning)
 		.Add(fWordWrapCheck)
 		.AddGrid(B_USE_SMALL_SPACING, B_USE_SMALL_SPACING)
 			.Add(fUserAgentField->CreateLabelLayoutItem(), 0, 0)
