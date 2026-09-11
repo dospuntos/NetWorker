@@ -203,6 +203,18 @@ MainWindow::MessageReceived(BMessage* message)
 
 	switch (message->what) {
 
+		case B_CUT:
+        case B_COPY:
+        case B_PASTE:
+        case B_UNDO:
+        case B_SELECT_ALL:
+        {
+            BView* focus = CurrentFocus();
+            if (focus != nullptr)
+                focus->MessageReceived(message);
+            break;
+        }
+
 		case M_NEW_REQUEST:
 		{
 			_ClearResponse();
@@ -851,6 +863,20 @@ MainWindow::MessageReceived(BMessage* message)
 
 			if (BMenuItem* item = fMenuBar->FindItem(M_TOGGLE_SIDEBAR))
 				item->SetMarked(!visible);
+			break;
+		}
+
+		case M_RESET_LAYOUT:
+		{
+			fOuterSplit->SetItemCollapsed(1, false);
+			fRequestAreaSplit->SetItemCollapsed(1, true);
+
+			if (BMenuItem* item = fMenuBar->FindItem(M_TOGGLE_PREVIEW))
+				item->SetMarked(false);
+
+			if (BMenuItem* item = fMenuBar->FindItem(M_TOGGLE_SIDEBAR))
+				item->SetMarked(true);
+
 			break;
 		}
 

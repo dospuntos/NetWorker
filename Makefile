@@ -49,7 +49,7 @@ SRCS =  src/App.cpp \
 		src/CollectionExporter.cpp \
 		src/CollectionImporter.cpp
 
-CXXFLAGS += -Ithird_party
+CXXFLAGS += -Isrc/third_party
 
 #	Specify the resource definition files to use. Full or relative paths can be
 #	used.

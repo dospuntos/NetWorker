@@ -28,6 +28,7 @@ enum {
 	M_NOT_IMPLEMENTED = 'nimp',
 	M_TOGGLE_PREVIEW = 'tprv',
 	M_TOGGLE_SIDEBAR = 'tsbr',
+	M_RESET_LAYOUT = 'rset',
 
 	M_NEW_REQUEST = 'nrqs',
 	M_SEND_REQUEST = 'send',

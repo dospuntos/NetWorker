@@ -33,15 +33,34 @@ MenuBar::MenuBar()
 		new BMenuItem(B_TRANSLATE("Help" B_UTF8_ELLIPSIS), new BMessage(M_SHOW_HELP), 'H'));
 	menu->AddItem(
 		new BMenuItem(B_TRANSLATE("Report a bug" B_UTF8_ELLIPSIS), new BMessage(M_REPORT_A_BUG)));
+
 	menu->AddSeparatorItem();
+
 	menu->AddItem(new BMenuItem(B_TRANSLATE("Settings" B_UTF8_ELLIPSIS),
 		new BMessage(M_SHOW_SETTINGS), ',', B_COMMAND_KEY));
+
 	menu->AddSeparatorItem();
+
 	menu->AddItem(new BMenuItem(B_TRANSLATE("Quit"), new BMessage(B_QUIT_REQUESTED), 'Q'));
 
 	IconMenuItem* iconMenu = new IconMenuItem(menu, NULL, kApplicationSignature, B_MINI_ICON);
 	AddItem(iconMenu);
 
+	// Edit menu
+	menu = new BMenu(B_TRANSLATE("Edit"));
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Undo"), new BMessage(B_UNDO), 'Z'));
+
+	menu->AddSeparatorItem();
+
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Cut"), new BMessage(B_CUT), 'X'));
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Copy"), new BMessage(B_COPY), 'C'));
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Paste"), new BMessage(B_PASTE), 'V'));
+
+	menu->AddSeparatorItem();
+
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Select all"), new BMessage(B_SELECT_ALL), 'A'));
+
+	AddItem(menu);
 
 	// Request menu
 	menu = new BMenu(B_TRANSLATE("Request"));
@@ -50,6 +69,7 @@ MenuBar::MenuBar()
 		new BMenuItem(B_TRANSLATE("Send request"), new BMessage(M_SEND_REQUEST), B_ENTER));
 
 	menu->AddItem(new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_NEW_REQUEST), 'N'));
+
 	menu->AddSeparatorItem();
 
 	menu->AddItem(
@@ -87,5 +107,8 @@ MenuBar::MenuBar()
 	fToggleSidebar->SetMarked(true);
 	menu->AddItem(fToggleSidebar);
 
+	menu->AddSeparatorItem();
+
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Reset layout"), new BMessage(M_RESET_LAYOUT)));
 	AddItem(menu);
 }
