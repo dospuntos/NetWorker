@@ -204,16 +204,16 @@ MainWindow::MessageReceived(BMessage* message)
 	switch (message->what) {
 
 		case B_CUT:
-        case B_COPY:
-        case B_PASTE:
-        case B_UNDO:
-        case B_SELECT_ALL:
-        {
-            BView* focus = CurrentFocus();
-            if (focus != nullptr)
-                focus->MessageReceived(message);
-            break;
-        }
+		case B_COPY:
+		case B_PASTE:
+		case B_UNDO:
+		case B_SELECT_ALL:
+		{
+			BView* focus = CurrentFocus();
+			if (focus != nullptr)
+				focus->MessageReceived(message);
+			break;
+		}
 
 		case M_NEW_REQUEST:
 		{
@@ -229,6 +229,8 @@ MainWindow::MessageReceived(BMessage* message)
 				fSession.Cancel(fCurrentResult.value());
 				fCurrentResult.reset();
 				fSendButton->SetLabel("Send");
+				if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
+					item->SetLabel("Send request");
 				fStatusLabel->SetText("Cancelled");
 				break;
 			}
@@ -244,6 +246,8 @@ MainWindow::MessageReceived(BMessage* message)
 
 			fStatusLabel->SetText("Request timed out");
 			fSendButton->SetLabel("Send");
+			if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
+				item->SetLabel("Send request");
 			break;
 		}
 
@@ -264,6 +268,8 @@ MainWindow::MessageReceived(BMessage* message)
 			if (!ok) {
 				fStatusLabel->SetText("Request failed");
 				fSendButton->SetLabel("Send");
+				if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
+					item->SetLabel("Send request");
 				fCurrentResult.reset();
 				break;
 			}
@@ -311,6 +317,8 @@ MainWindow::MessageReceived(BMessage* message)
 			}
 
 			fSendButton->SetLabel("Send");
+			if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
+				item->SetLabel("Send request");
 			fCurrentResult.reset();
 			break;
 		}
@@ -1221,6 +1229,8 @@ MainWindow::_SendRequest()
 	fCurrentResult = fSession.Execute(std::move(request), nullptr, BMessenger(this));
 
 	fSendButton->SetLabel("Cancel");
+	if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
+				item->SetLabel("Cancel request");
 	fStatusLabel->SetText("Sending" B_UTF8_ELLIPSIS);
 	fResponseHeadersList->Clear();
 	fResponseBodyView->SetText("");

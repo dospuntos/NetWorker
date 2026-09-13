@@ -65,8 +65,9 @@ MenuBar::MenuBar()
 	// Request menu
 	menu = new BMenu(B_TRANSLATE("Request"));
 
-	menu->AddItem(
-		new BMenuItem(B_TRANSLATE("Send request"), new BMessage(M_SEND_REQUEST), B_ENTER));
+	fSendRequest =
+		new BMenuItem(B_TRANSLATE("Send request"), new BMessage(M_SEND_REQUEST), B_ENTER);
+	menu->AddItem(fSendRequest);
 
 	menu->AddItem(new BMenuItem(B_TRANSLATE("New request"), new BMessage(M_NEW_REQUEST), 'N'));
 

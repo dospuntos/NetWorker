@@ -19,6 +19,7 @@ public:
 private:
     BMenuItem* fTogglePreview;
     BMenuItem* fToggleSidebar;
+	BMenuItem* fSendRequest;
 };
 
 #endif // MENU_BAR_H
