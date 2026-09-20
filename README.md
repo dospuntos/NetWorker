@@ -17,10 +17,12 @@ Compose a request with method, URL, headers, form parameters, or a raw body, aut
   - URL input with validation
   - Live request preview panel
   - Custom headers
+  - Custom URL parameters
 
 - **Request body**
   - Raw body editor
   - Form-encoded parameters (`application/x-www-form-urlencoded`) with an add/remove key-value editor
+  - File attachment
 
 - **Authorization**
   - None, Basic (username/password), Bearer token, and API key (custom header name/value)
@@ -33,11 +35,15 @@ Compose a request with method, URL, headers, form parameters, or a raw body, aut
 - **History**
   - Auto-populated on every send (method, URL, body, params, and auth recorded)
   - Click an item to restore it into the request builder
-  - Multi-select delete, clear-all with confirmation
-  - Persists between sessions
+  - Persists between sessions (optional, disabled by default)
+  - Set max history items to keep (default 100)
+  - Save history item to collection
+  - Right-click menu for more options
 
-- **Layout**
-  - Resizable panel layout: history sidebar, request/preview split, response panel
+- **Collections**
+  - Import and export collections of requests
+  - Example collection included (httpbin-test-collection.json)
+  - Right-click menu for more options
 
 ---
 
