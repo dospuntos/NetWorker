@@ -97,7 +97,7 @@ CollectionExporter::Export(Collection* collection, const BString& path)
         return B_ERROR;
     }
 
-    std::string dumped = root.dump(2);   // pretty-printed, 2-space indent — readable, diffable
+    std::string dumped = root.dump(2);
 
     BFile file(path.String(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
     status_t status = file.InitCheck();

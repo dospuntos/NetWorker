@@ -100,6 +100,7 @@ private:
 
 	BFilePanel* 	 fExportFilePanel;
 	BFilePanel*		 fImportFilePanel;
+	BFilePanel*		 fSaveResponseFilePanel;
 	Collection* 	 fPendingExportCollection;
 
 	BObjectList<Collection, true> fCollections;
@@ -131,6 +132,14 @@ private:
 	void _ApplyDefaultUserAgent();
 	void _TrimHistory();
 	BString _FormatFileSize(int64 bytes);
+
+	BString    fRawResponseBody;    // original response
+	BCheckBox* fPrettifyCheck;
+	BButton*   fCopyResponseButton;
+	BButton*   fSaveResponseButton;
+	BButton*   fOpenInBrowserButton;
+	BButton*   fOpenFileButton;
+	void _DisplayResponseBody();
 };
 
 #endif

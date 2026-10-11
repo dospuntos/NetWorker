@@ -75,6 +75,11 @@ enum {
 	M_RENAME_COLLECTION_ITEM = 'rnci',
 	M_DELETE_COLLECTION_ITEM = 'dcit',
 
+	M_TOGGLE_PRETTIFY = 'tpjs',
+	M_COPY_RESPONSE_BODY = 'crbd',
+	M_SAVE_RESPONSE_BODY = 'srbd',
+	M_SAVE_RESPONSE_BODY_PANEL = 'srbp'
+
 };
 
 

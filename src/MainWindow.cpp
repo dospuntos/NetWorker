@@ -19,6 +19,7 @@
 #include <Button.h>
 #include <CardLayout.h>
 #include <Catalog.h>
+#include <CheckBox.h>
 #include <Clipboard.h>
 #include <DataIO.h>
 #include <Directory.h>
@@ -43,6 +44,7 @@
 #include <TextControl.h>
 #include <Url.h>
 #include <string>
+#include <nlohmann/json.hpp>
 
 using BPrivate::Network::BHttpFields;
 using BPrivate::Network::BHttpMethod;
@@ -155,6 +157,7 @@ MainWindow::MainWindow()
 	fActiveCollectionIndex(-1),
 	fExportFilePanel(nullptr),
 	fImportFilePanel(nullptr),
+	fSaveResponseFilePanel(nullptr),
 	fPendingExportCollection(nullptr)
 {
 	fAppSettings = new AppSettings();
@@ -192,6 +195,7 @@ MainWindow::~MainWindow()
 	delete fAppSettings;
 	delete fExportFilePanel;
 	delete fImportFilePanel;
+	delete fSaveResponseFilePanel;
 }
 
 
@@ -304,15 +308,10 @@ MainWindow::MessageReceived(BMessage* message)
 
 			auto& body = fCurrentResult->Body();
 			if (body.text.has_value()) {
-				BString bodyText(body.text->String());
-				int32 length = bodyText.Length();
-
-				if (fAppSettings->fMaxResponseSize > 0 && length > fAppSettings->fMaxResponseSize) {
-					bodyText.Truncate(fAppSettings->fMaxResponseSize);
-					bodyText << "\n\n[Response length truncated, adjust the limit in Settings.]";
-				}
-				fResponseBodyView->SetText(bodyText);
+				fRawResponseBody = body.text->String();
+				_DisplayResponseBody();
 			} else {
+				fRawResponseBody = "";
 				fResponseBodyView->SetText("(no body)");
 			}
 
@@ -842,6 +841,60 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_TOGGLE_PRETTIFY:
+			_DisplayResponseBody();
+			break;
+
+		case M_COPY_RESPONSE_BODY:
+		{
+			BString text(fResponseBodyView->Text());
+			if (be_clipboard->Lock()) {
+				be_clipboard->Clear();
+				BMessage* clip = be_clipboard->Data();
+				if (clip != nullptr) {
+					clip->AddData("text/plain", B_MIME_TYPE, text.String(), text.Length());
+					be_clipboard->Commit();
+				}
+				be_clipboard->Unlock();
+			}
+			break;
+		}
+
+		case M_SAVE_RESPONSE_BODY_PANEL:
+		{
+			if (fSaveResponseFilePanel == nullptr) {
+				BMessenger messenger(this);
+				fSaveResponseFilePanel = new BFilePanel(B_SAVE_PANEL, &messenger, nullptr, 0, false);
+			}
+			fSaveResponseFilePanel->SetMessage(new BMessage(M_SAVE_RESPONSE_BODY));
+			fSaveResponseFilePanel->SetSaveText("response.txt");
+			fSaveResponseFilePanel->Show();
+			break;
+		}
+
+		case M_SAVE_RESPONSE_BODY:
+		{
+			entry_ref dirRef;
+			BString name;
+			if (message->FindRef("directory", &dirRef) != B_OK
+					|| message->FindString("name", &name) != B_OK)
+				break;
+
+			BPath dirPath(&dirRef);
+			BPath filePath(dirPath);
+			filePath.Append(name.String());
+
+			BFile file(filePath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+			if (file.InitCheck() == B_OK) {
+				BString text(fResponseBodyView->Text());
+				file.Write(text.String(), text.Length());
+				fStatusLabel->SetText("Response saved");
+			} else {
+				fStatusLabel->SetText("Failed to save response");
+			}
+			break;
+		}
+
 		case M_NOT_IMPLEMENTED:
 		{
 			BAlert* alert = new BAlert("Coming Soon",
@@ -1034,36 +1087,71 @@ MainWindow::_BuildRequestPanel()
 BView*
 MainWindow::_BuildResponsePanel()
 {
-	fStatusLabel = new BStringView("status", "(no response yet)");
-	BButton* clearButton = new BButton("clear", "Clear", new BMessage(M_CLEAR_RESPONSE));
+    fStatusLabel = new BStringView("status", "(no response yet)");
+    BButton* clearButton = new BButton("clear", "Clear", new BMessage(M_CLEAR_RESPONSE));
 
-	fResponseHeadersList = new BColumnListView("responseHeaders",
-		B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE, B_FANCY_BORDER);
-	fResponseHeadersList->AddColumn(new BStringColumn("Header", 180, 80, 400, 0), 0);
-	fResponseHeadersList->AddColumn(new BStringColumn("Value", 500, 100, 2000, 0), 1);
-	fResponseHeadersList->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
+    fResponseHeadersList = new BColumnListView("responseHeaders",
+        B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE, B_FANCY_BORDER);
+    fResponseHeadersList->AddColumn(new BStringColumn("Header", 180, 80, 400, 0), 0);
+    fResponseHeadersList->AddColumn(new BStringColumn("Value", 500, 100, 2000, 0), 1);
+    fResponseHeadersList->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
 
-	fResponseBodyView = new BTextView("responseBody");
-	fResponseBodyView->MakeEditable(false);
-	fResponseBodyScroll = new BScrollView("responseBodyScroll", fResponseBodyView,
-		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
-	fResponseBodyScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
+    fResponseBodyView = new BTextView("responseBody");
+    fResponseBodyView->MakeEditable(false);
+    fResponseBodyScroll = new BScrollView("responseBodyScroll", fResponseBodyView,
+        B_WILL_DRAW | B_FRAME_EVENTS, false, true);
+    fResponseBodyScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
 
-	fResponseTabView = new BTabView("responseTabs");
-	fResponseTabView->AddTab(fResponseHeadersList);
-	fResponseTabView->TabAt(0)->SetLabel("Headers");
-	fResponseTabView->AddTab(fResponseBodyScroll);
-	fResponseTabView->TabAt(1)->SetLabel("Body");
+    // Top toolbar
+    fCopyResponseButton = new BButton("copyResponseBody", "Copy", new BMessage(M_COPY_RESPONSE_BODY));
+    fSaveResponseButton = new BButton("saveResponseBody", "Save" B_UTF8_ELLIPSIS,
+        new BMessage(M_SAVE_RESPONSE_BODY_PANEL));
 
-	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-		.SetInsets(B_USE_WINDOW_INSETS)
-		.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
-			.Add(fStatusLabel)
-			.AddGlue()
-			.Add(clearButton)
-			.End()
-		.Add(fResponseTabView)
-		.View();
+    fOpenInBrowserButton = new BButton("openInBrowser", "Open in Browser", new BMessage(M_NOT_IMPLEMENTED));
+    fOpenInBrowserButton->SetEnabled(false);
+
+    fOpenFileButton = new BButton("openFile", "Open File", new BMessage(M_NOT_IMPLEMENTED));
+    fOpenFileButton->SetEnabled(false);
+
+    BView* bodyToolbar = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
+                              .Add(fCopyResponseButton)
+                              .Add(fSaveResponseButton)
+                              .AddGlue()
+                              .Add(fOpenInBrowserButton)
+                              .Add(fOpenFileButton)
+                              .View();
+
+    // Footer
+    fPrettifyCheck = new BCheckBox("prettifyJson", "Prettify JSON", new BMessage(M_TOGGLE_PRETTIFY));
+    fPrettifyCheck->SetValue(B_CONTROL_ON);
+
+    BView* bodyFooter = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
+							 .SetInsets(4,0,0,0)
+                             .Add(fPrettifyCheck)
+							 .AddGlue()
+                             .View();
+
+    BView* responseBodyTab = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+                                  .Add(bodyToolbar)
+                                  .Add(fResponseBodyScroll)
+                                  .Add(bodyFooter)
+                                  .View();
+
+    fResponseTabView = new BTabView("responseTabs");
+    fResponseTabView->AddTab(fResponseHeadersList);
+    fResponseTabView->TabAt(0)->SetLabel("Headers");
+    fResponseTabView->AddTab(responseBodyTab);
+    fResponseTabView->TabAt(1)->SetLabel("Body");
+
+    return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+        .SetInsets(B_USE_WINDOW_INSETS)
+        .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+            .Add(fStatusLabel)
+            .AddGlue()
+            .Add(clearButton)
+            .End()
+        .Add(fResponseTabView)
+        .View();
 }
 
 
@@ -1807,4 +1895,34 @@ MainWindow::_FormatFileSize(int64 bytes)
 	else
 		result << (bytes / (1024.0f * 1024.0f)) << " MB";
 	return result;
+}
+
+
+void
+MainWindow::_DisplayResponseBody()
+{
+    BString displayText = fRawResponseBody;
+
+    if (fPrettifyCheck->Value() == B_CONTROL_ON) {
+        try {
+            nlohmann::json parsed = nlohmann::json::parse(fRawResponseBody.String());
+            displayText = parsed.dump(2).c_str();
+        } catch (const nlohmann::json::parse_error&) {
+        }
+    }
+
+    int32 length = displayText.Length();
+    if (fAppSettings->fMaxResponseSize > 0 && length > fAppSettings->fMaxResponseSize) {
+        BString truncated;
+        truncated.SetTo(displayText.String(), (int32)fAppSettings->fMaxResponseSize);
+        BString notice;
+        notice << "\n\n[Response truncated, showing "
+               << (fAppSettings->fMaxResponseSize / (1024 * 1024)) << " MB of "
+               << (length / (1024 * 1024)) << " MB. Adjust the limit in Settings.]";
+		BString response;
+		response << truncated << notice;
+        fResponseBodyView->SetText((notice).String());
+    } else {
+        fResponseBodyView->SetText(displayText.String());
+    }
 }
