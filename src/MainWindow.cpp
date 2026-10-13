@@ -10,6 +10,7 @@
 #include "Constants.h"
 #include "HistoryItem.h"
 #include "RenameWindow.h"
+#include "ResponseFileManager.h"
 
 #include <FilePanel.h>
 #include <RadioButton.h>
@@ -37,6 +38,7 @@
 #include <Messenger.h>
 #include <NetServicesDefs.h>
 #include <PopUpMenu.h>
+#include <Roster.h>
 #include <ScrollView.h>
 #include <SplitView.h>
 #include <StringView.h>
@@ -285,6 +287,10 @@ MainWindow::MessageReceived(BMessage* message)
 
 			fResponseHeadersList->Clear();
 
+			// Reset metadata for each new response
+			fContentType = "";
+			fContentLength = -1;
+
 			if (fCurrentResult->HasFields()) {
 				const BHttpFields& fields = fCurrentResult->Fields();
 
@@ -294,13 +300,28 @@ MainWindow::MessageReceived(BMessage* message)
 					std::string_view value = field.Value();
 					std::string_view nameView = name;
 
+					BString headerName(nameView.data(), nameView.size());
+					BString headerValue(value.data(), value.size());
+
+					// Store important response headers
+					if (headerName.ICompare("Content-Type") == 0) {
+						fContentType = headerValue;
+					} else if (headerName.ICompare("Content-Length") == 0) {
+						char* end = nullptr;
+						const char* start = headerValue.String();
+
+						errno = 0;
+						long long length = strtoll(start, &end, 10);
+
+						if (errno == 0 && end != start && *end == '\0' && length >= 0)
+							fContentLength = length;
+					}
+
+					// Populate the response headers list
 					BRow* row = new BRow();
 
-					row->SetField(
-						new BStringField(BString(nameView.data(), nameView.size()).String()), 0);
-
-					row->SetField(new BStringField(BString(value.data(), value.size()).String()),
-						1);
+					row->SetField(new BStringField(headerName.String()), 0);
+					row->SetField(new BStringField(headerValue.String()), 1);
 
 					fResponseHeadersList->AddRow(row);
 				}
@@ -310,6 +331,7 @@ MainWindow::MessageReceived(BMessage* message)
 			if (body.text.has_value()) {
 				fRawResponseBody = body.text->String();
 				_DisplayResponseBody();
+				fCopyResponseButton->SetEnabled(true);
 			} else {
 				fRawResponseBody = "";
 				fResponseBodyView->SetText("(no body)");
@@ -895,6 +917,91 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case M_OPEN_IN_EDITOR:
+		{
+			entry_ref ref;
+
+			status_t status = ResponseFileManager::CreateTextFile(
+				fRawResponseBody, fRawResponseBody.Length(), ref);
+
+			if (status == B_OK)
+				status = be_roster->Launch(&ref);
+
+			if (status != B_OK) {
+				BAlert* alert = new BAlert("Error",
+					"Could not open response in text editor.",
+					"OK", nullptr, nullptr, B_WIDTH_AS_USUAL,
+					B_STOP_ALERT);
+				alert->Go();
+			}
+
+			break;
+		}
+
+		case M_OPEN_IN_BROWSER:
+		{
+			entry_ref ref;
+
+			status_t status = ResponseFileManager::CreateFile(
+				fRawResponseBody, fRawResponseBody.Length(), fContentType, ref);
+
+			if (status == B_OK) {
+				entry_ref browserRef;
+
+				// Find the preferred application for HTML files
+				status = be_roster->FindApp("text/html", &browserRef);
+
+				if (status == B_OK) {
+					BMessage refsMessage(B_REFS_RECEIVED);
+					refsMessage.AddRef("refs", &ref);
+
+					status = be_roster->Launch(&browserRef, &refsMessage);
+				}
+			}
+
+			if (status != B_OK) {
+				BAlert* alert = new BAlert("Error",
+					"Could not open response in browser.",
+					"OK", nullptr, nullptr, B_WIDTH_AS_USUAL,
+					B_STOP_ALERT);
+				alert->Go();
+			}
+
+			break;
+		}
+
+		case M_OPEN_WITH:
+		{
+			entry_ref ref;
+
+			status_t status = ResponseFileManager::CreateFile(
+				fRawResponseBody, fRawResponseBody.Length(), fContentType, ref);
+
+			if (status == B_OK) {
+				BMessenger tracker("application/x-vnd.Be-TRAK");
+
+				if (tracker.IsValid()) {
+					BMessage message(B_REFS_RECEIVED);
+					message.AddRef("refs", &ref);
+					message.AddInt32("launchUsingSelector", 0);
+
+					status = tracker.SendMessage(&message);
+				} else {
+					status = B_ERROR;
+				}
+			}
+
+			if (status != B_OK) {
+				BAlert* alert = new BAlert("Error",
+					"Could not open the application selector.",
+					"OK", nullptr, nullptr, B_WIDTH_AS_USUAL,
+					B_STOP_ALERT);
+				alert->Go();
+			}
+
+			break;
+		}
+
 		case M_NOT_IMPLEMENTED:
 		{
 			BAlert* alert = new BAlert("Coming Soon",
@@ -938,6 +1045,36 @@ MainWindow::MessageReceived(BMessage* message)
 			if (BMenuItem* item = fMenuBar->FindItem(M_TOGGLE_SIDEBAR))
 				item->SetMarked(true);
 
+			break;
+		}
+
+		case M_OPEN_RESPONSE_MENU:
+		{
+			BPopUpMenu* menu = new BPopUpMenu("Open response", false, false);
+
+			BMenuItem* browserItem = new BMenuItem("Open in browser",
+			new BMessage(M_OPEN_IN_BROWSER));
+
+			BMenuItem* editorItem = new BMenuItem("Open in text editor",
+				new BMessage(M_OPEN_IN_EDITOR));
+
+			BMenuItem* openWithItem = new BMenuItem("Open with" B_UTF8_ELLIPSIS,
+				new BMessage(M_OPEN_WITH));
+
+			menu->AddItem(browserItem);
+			menu->AddItem(editorItem);
+			menu->AddItem(openWithItem);
+
+			menu->SetTargetForItems(this);
+
+			BView* button = FindView("openResponse");
+			if (button != nullptr) {
+				BPoint point = button->ConvertToScreen(BPoint(0, button->Bounds().bottom + 1));
+
+				menu->Go(point, true, false, false);
+			}
+
+			delete menu;
 			break;
 		}
 
@@ -1103,41 +1240,34 @@ MainWindow::_BuildResponsePanel()
     fResponseBodyScroll->SetExplicitMaxSize(BSize(B_SIZE_UNSET, B_SIZE_UNLIMITED));
 
     // Top toolbar
-    fCopyResponseButton = new BButton("copyResponseBody", "Copy", new BMessage(M_COPY_RESPONSE_BODY));
-    fSaveResponseButton = new BButton("saveResponseBody", "Save" B_UTF8_ELLIPSIS,
-        new BMessage(M_SAVE_RESPONSE_BODY_PANEL));
+	fCopyResponseButton
+		= new BButton("copyResponseBody", "Copy to clipboard", new BMessage(M_COPY_RESPONSE_BODY));
+	fCopyResponseButton->SetEnabled(false);
 
-    fOpenInBrowserButton = new BButton("openInBrowser", "Open in Browser", new BMessage(M_NOT_IMPLEMENTED));
-    fOpenInBrowserButton->SetEnabled(false);
+	fSaveResponseButton = new BButton("saveResponseBody", "Save" B_UTF8_ELLIPSIS,
+		new BMessage(M_SAVE_RESPONSE_BODY_PANEL));
 
-    fOpenFileButton = new BButton("openFile", "Open File", new BMessage(M_NOT_IMPLEMENTED));
-    fOpenFileButton->SetEnabled(false);
+	BButton* openButton
+		= new BButton("openResponse", "Open" B_UTF8_ELLIPSIS, new BMessage(M_OPEN_RESPONSE_MENU));
 
-    BView* bodyToolbar = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
-                              .Add(fCopyResponseButton)
-                              .Add(fSaveResponseButton)
-                              .AddGlue()
-                              .Add(fOpenInBrowserButton)
-                              .Add(fOpenFileButton)
-                              .View();
+	fPrettifyCheck
+		= new BCheckBox("prettifyJson", "Prettify JSON", new BMessage(M_TOGGLE_PRETTIFY));
+	fPrettifyCheck->SetValue(B_CONTROL_ON);
 
-    // Footer
-    fPrettifyCheck = new BCheckBox("prettifyJson", "Prettify JSON", new BMessage(M_TOGGLE_PRETTIFY));
-    fPrettifyCheck->SetValue(B_CONTROL_ON);
-
-    BView* bodyFooter = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
-							 .SetInsets(4,0,0,0)
-                             .Add(fPrettifyCheck)
+	BView* bodyToolbar = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
+							 .Add(fCopyResponseButton)
+							 .Add(fSaveResponseButton)
+							 .Add(openButton)
 							 .AddGlue()
-                             .View();
+							 .Add(fPrettifyCheck)
+							 .View();
 
-    BView* responseBodyTab = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-                                  .Add(bodyToolbar)
-                                  .Add(fResponseBodyScroll)
-                                  .Add(bodyFooter)
-                                  .View();
+	BView* responseBodyTab = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+								 .Add(bodyToolbar)
+								 .Add(fResponseBodyScroll)
+								 .View();
 
-    fResponseTabView = new BTabView("responseTabs");
+	fResponseTabView = new BTabView("responseTabs");
     fResponseTabView->AddTab(fResponseHeadersList);
     fResponseTabView->TabAt(0)->SetLabel("Headers");
     fResponseTabView->AddTab(responseBodyTab);
@@ -1317,6 +1447,7 @@ MainWindow::_SendRequest()
 	fCurrentResult = fSession.Execute(std::move(request), nullptr, BMessenger(this));
 
 	fSendButton->SetLabel("Cancel");
+	fCopyResponseButton->SetEnabled(false);
 	if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
 				item->SetLabel("Cancel request");
 	fStatusLabel->SetText("Sending" B_UTF8_ELLIPSIS);
@@ -1339,6 +1470,7 @@ MainWindow::_ClearResponse()
 	fStatusLabel->SetText("(no response yet)");
 	fResponseHeadersList->Clear();
 	fResponseBodyView->SetText("");
+	fCopyResponseButton->SetEnabled(false);
 	if (fCurrentResult.has_value())
 		fSession.Cancel(fCurrentResult.value());
 }

@@ -202,7 +202,7 @@ HeadersPanel::LoadFrom(const BMessage& headers)
 void
 HeadersPanel::SetComputedHeaders(const BMessage& headers)
 {
-	// Remove system rows only, leave custom rows exactly as they are.
+	// Remove system rows only
 	for (int32 i = fList->CountRows() - 1; i >= 0; i--) {
 		auto* row = static_cast<HeaderRow*>(fList->RowAt(i));
 		if (!row->fIsCustom)

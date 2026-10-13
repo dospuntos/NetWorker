@@ -47,7 +47,8 @@ SRCS =  src/App.cpp \
 		src/layout/HeadersPanel.cpp \
 		src/layout/MenuBar.cpp \
 		src/CollectionExporter.cpp \
-		src/CollectionImporter.cpp
+		src/CollectionImporter.cpp \
+		src/ResponseFileManager.cpp
 
 CXXFLAGS += -Isrc/third_party
 

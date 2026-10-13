@@ -23,6 +23,8 @@
 #include <HttpSession.h>
 #include <ListView.h>
 #include <MenuBar.h>
+#include <MenuItem.h>
+#include <PopUpMenu.h>
 #include <TabView.h>
 #include <TextView.h>
 #include <Window.h>
@@ -80,7 +82,7 @@ private:
 	BSplitView*			fRequestAreaSplit;
 	BSplitView*			fOuterSplit;
     BHttpSession                fSession;
-    std::optional<BHttpResult>  fCurrentResult;
+    std::optional<BHttpResult>   fCurrentResult;
 	BString fPendingRequestBody;
 	BListView* 			fHistoryPanel;
 	BButton*			fClearHistoryBtn;
@@ -133,12 +135,13 @@ private:
 	void _TrimHistory();
 	BString _FormatFileSize(int64 bytes);
 
-	BString    fRawResponseBody;    // original response
+	BString    fRawResponseBody; // original response
+	BString fContentType;
+	int64 fContentLength = -1;
+
 	BCheckBox* fPrettifyCheck;
 	BButton*   fCopyResponseButton;
 	BButton*   fSaveResponseButton;
-	BButton*   fOpenInBrowserButton;
-	BButton*   fOpenFileButton;
 	void _DisplayResponseBody();
 };
 

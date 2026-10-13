@@ -76,9 +76,13 @@ enum {
 	M_DELETE_COLLECTION_ITEM = 'dcit',
 
 	M_TOGGLE_PRETTIFY = 'tpjs',
+	M_OPEN_RESPONSE_MENU = 'oprm',
 	M_COPY_RESPONSE_BODY = 'crbd',
 	M_SAVE_RESPONSE_BODY = 'srbd',
-	M_SAVE_RESPONSE_BODY_PANEL = 'srbp'
+	M_SAVE_RESPONSE_BODY_PANEL = 'srbp',
+	M_OPEN_IN_BROWSER = 'opbr',
+	M_OPEN_IN_EDITOR = 'oped',
+	M_OPEN_WITH = 'opwt'
 
 };
 
