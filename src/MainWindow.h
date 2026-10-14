@@ -18,6 +18,8 @@
 
 #include <ColumnListView.h>
 #include <ColumnTypes.h>
+#include <DataIO.h>
+#include <ExclusiveBorrow.h>
 #include <HttpFields.h>
 #include <HttpResult.h>
 #include <HttpSession.h>
@@ -29,6 +31,7 @@
 #include <TextView.h>
 #include <Window.h>
 
+using BPrivate::Network::BExclusiveBorrow;
 using BPrivate::Network::BHttpFields;
 using BPrivate::Network::BHttpResult;
 using BPrivate::Network::BHttpSession;
@@ -138,10 +141,12 @@ private:
 	BString    fRawResponseBody; // original response
 	BString fContentType;
 	int64 fContentLength = -1;
+	BPrivate::Network::BExclusiveBorrow<BMallocIO> fResponseBuffer;
 
 	BCheckBox* fPrettifyCheck;
 	BButton*   fCopyResponseButton;
 	BButton*   fSaveResponseButton;
+	bool _IsTextResponse() const;
 	void _DisplayResponseBody();
 };
 

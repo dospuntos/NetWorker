@@ -22,9 +22,9 @@
 #include <Catalog.h>
 #include <CheckBox.h>
 #include <Clipboard.h>
-#include <DataIO.h>
 #include <Directory.h>
 #include <ErrorsExt.h>
+#include <ExclusiveBorrow.h>
 #include <File.h>
 #include <FindDirectory.h>
 #include <HttpFields.h>
@@ -45,8 +45,8 @@
 #include <SupportDefs.h>
 #include <TextControl.h>
 #include <Url.h>
-#include <string>
 #include <nlohmann/json.hpp>
+#include <string>
 
 using BPrivate::Network::BHttpFields;
 using BPrivate::Network::BHttpMethod;
@@ -327,14 +327,34 @@ MainWindow::MessageReceived(BMessage* message)
 				}
 			}
 
-			auto& body = fCurrentResult->Body();
-			if (body.text.has_value()) {
-				fRawResponseBody = body.text->String();
-				_DisplayResponseBody();
-				fCopyResponseButton->SetEnabled(true);
+			// Process the response body
+			BMallocIO& buffer = *fResponseBuffer;
+			const void* data = buffer.Buffer();
+			size_t size = buffer.BufferLength();
+
+			if (size > 0) {
+				if (_IsTextResponse()) {
+					// Copy the response into fRawResponseBody
+					fRawResponseBody.SetTo(static_cast<const char*>(data), size);
+
+					_DisplayResponseBody();
+					fCopyResponseButton->SetEnabled(true);
+				} else {
+					// Binary response
+					fRawResponseBody = "";
+
+					BString message;
+					message.SetToFormat("Binary response (%s, %zu bytes)\n\n"
+										"Use Open... to view the response.",
+						fContentType.String(), size);
+
+					fResponseBodyView->SetText(message.String());
+					fCopyResponseButton->SetEnabled(false);
+				}
 			} else {
 				fRawResponseBody = "";
 				fResponseBodyView->SetText("(no body)");
+				fCopyResponseButton->SetEnabled(false);
 			}
 
 			fSendButton->SetLabel("Send");
@@ -921,8 +941,8 @@ MainWindow::MessageReceived(BMessage* message)
 		{
 			entry_ref ref;
 
-			status_t status = ResponseFileManager::CreateTextFile(
-				fRawResponseBody, fRawResponseBody.Length(), ref);
+			status_t status = ResponseFileManager::CreateTextFile(fResponseBuffer->Buffer(),
+				fResponseBuffer->BufferLength(), ref);
 
 			if (status == B_OK)
 				status = be_roster->Launch(&ref);
@@ -942,8 +962,8 @@ MainWindow::MessageReceived(BMessage* message)
 		{
 			entry_ref ref;
 
-			status_t status = ResponseFileManager::CreateFile(
-				fRawResponseBody, fRawResponseBody.Length(), fContentType, ref);
+			status_t status = ResponseFileManager::CreateFile(fResponseBuffer->Buffer(),
+				fResponseBuffer->BufferLength(), fContentType, ref);
 
 			if (status == B_OK) {
 				entry_ref browserRef;
@@ -974,8 +994,8 @@ MainWindow::MessageReceived(BMessage* message)
 		{
 			entry_ref ref;
 
-			status_t status = ResponseFileManager::CreateFile(
-				fRawResponseBody, fRawResponseBody.Length(), fContentType, ref);
+			status_t status = ResponseFileManager::CreateFile(fResponseBuffer->Buffer(),
+				fResponseBuffer->BufferLength(), fContentType, ref);
 
 			if (status == B_OK) {
 				BMessenger tracker("application/x-vnd.Be-TRAK");
@@ -1444,7 +1464,9 @@ MainWindow::_SendRequest()
 	_UpdateHistoryButtons();
 
 	// Send request
-	fCurrentResult = fSession.Execute(std::move(request), nullptr, BMessenger(this));
+	fResponseBuffer = BPrivate::Network::make_exclusive_borrow<BMallocIO>();
+	fCurrentResult = fSession.Execute(std::move(request),
+		BPrivate::Network::BBorrow<BDataIO>(fResponseBuffer), BMessenger(this));
 
 	fSendButton->SetLabel("Cancel");
 	fCopyResponseButton->SetEnabled(false);
@@ -2027,6 +2049,35 @@ MainWindow::_FormatFileSize(int64 bytes)
 	else
 		result << (bytes / (1024.0f * 1024.0f)) << " MB";
 	return result;
+}
+
+
+bool
+MainWindow::_IsTextResponse() const
+{
+	BString mimeType(fContentType);
+
+	// Remove charset and other parameters
+	int32 separator = mimeType.FindFirst(';');
+	if (separator >= 0)
+		mimeType.Truncate(separator);
+
+	mimeType.Trim();
+	mimeType.ToLower();
+
+	if (mimeType.StartsWith("text/"))
+		return true;
+
+	if (mimeType == "application/json" || mimeType.EndsWith("+json"))
+		return true;
+
+	if (mimeType == "application/xml" || mimeType.EndsWith("+xml"))
+		return true;
+
+	if (mimeType == "application/javascript")
+		return true;
+
+	return false;
 }
 
 
