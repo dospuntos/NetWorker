@@ -177,6 +177,7 @@ MainWindow::MainWindow()
 	_RefreshCollectionMenu();
 	_RefreshCollectionItemList();
 	_ApplyDefaultUserAgent();
+	_UpdateResponseActions();
 }
 
 
@@ -264,6 +265,7 @@ MainWindow::MessageReceived(BMessage* message)
 		case RequestCompleted:
 		{
 			_StopRequestTimeout();
+			fHasCompletedResponse = true;
 
 			int id = message->GetInt32(Id, -1);
 			bool ok = message->GetBool(Success, false);
@@ -356,6 +358,8 @@ MainWindow::MessageReceived(BMessage* message)
 				fResponseBodyView->SetText("(no body)");
 				fCopyResponseButton->SetEnabled(false);
 			}
+
+			_UpdateResponseActions();
 
 			fSendButton->SetLabel("Send");
 			if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
@@ -1087,6 +1091,15 @@ MainWindow::MessageReceived(BMessage* message)
 
 			menu->SetTargetForItems(this);
 
+			bool hasBody = fResponseBuffer.HasValue()
+				&& fResponseBuffer->BufferLength() > 0;
+
+			bool isText = hasBody && _IsTextResponse();
+
+			browserItem->SetEnabled(hasBody);
+			editorItem->SetEnabled(isText);
+			openWithItem->SetEnabled(hasBody);
+
 			BView* button = FindView("openResponse");
 			if (button != nullptr) {
 				BPoint point = button->ConvertToScreen(BPoint(0, button->Bounds().bottom + 1));
@@ -1267,17 +1280,17 @@ MainWindow::_BuildResponsePanel()
 	fSaveResponseButton = new BButton("saveResponseBody", "Save" B_UTF8_ELLIPSIS,
 		new BMessage(M_SAVE_RESPONSE_BODY_PANEL));
 
-	BButton* openButton
-		= new BButton("openResponse", "Open" B_UTF8_ELLIPSIS, new BMessage(M_OPEN_RESPONSE_MENU));
+	fOpenResponseButton = new BButton("openResponse", "Open" B_UTF8_ELLIPSIS,
+		new BMessage(M_OPEN_RESPONSE_MENU));
 
 	fPrettifyCheck
 		= new BCheckBox("prettifyJson", "Prettify JSON", new BMessage(M_TOGGLE_PRETTIFY));
 	fPrettifyCheck->SetValue(B_CONTROL_ON);
 
-	BView* bodyToolbar = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_SMALL_SPACING)
+	BView* bodyToolbar = BLayoutBuilder::Group<>(B_HORIZONTAL, B_USE_DEFAULT_SPACING)
 							 .Add(fCopyResponseButton)
 							 .Add(fSaveResponseButton)
-							 .Add(openButton)
+							 .Add(fOpenResponseButton)
 							 .AddGlue()
 							 .Add(fPrettifyCheck)
 							 .View();
@@ -1464,6 +1477,7 @@ MainWindow::_SendRequest()
 	_UpdateHistoryButtons();
 
 	// Send request
+	fHasCompletedResponse = false;
 	fResponseBuffer = BPrivate::Network::make_exclusive_borrow<BMallocIO>();
 	fCurrentResult = fSession.Execute(std::move(request),
 		BPrivate::Network::BBorrow<BDataIO>(fResponseBuffer), BMessenger(this));
@@ -1489,12 +1503,23 @@ MainWindow::_SendRequest()
 void
 MainWindow::_ClearResponse()
 {
-	fStatusLabel->SetText("(no response yet)");
-	fResponseHeadersList->Clear();
-	fResponseBodyView->SetText("");
-	fCopyResponseButton->SetEnabled(false);
-	if (fCurrentResult.has_value())
-		fSession.Cancel(fCurrentResult.value());
+    if (fCurrentResult.has_value())
+        fSession.Cancel(fCurrentResult.value());
+
+    // Reset response state.
+    //fHasCompletedResponse = false;
+    fRawResponseBody = "";
+    fContentType = "";
+    fContentLength = -1;
+
+    if (fResponseBuffer.HasValue() && !fCurrentResult.has_value())
+        fResponseBuffer->SetSize(0);
+
+    fStatusLabel->SetText("(no response yet)");
+    fResponseHeadersList->Clear();
+    fResponseBodyView->SetText("");
+
+    _UpdateResponseActions();
 }
 
 
@@ -2081,6 +2106,24 @@ MainWindow::_IsTextResponse() const
 }
 
 
+bool
+MainWindow::_IsJsonResponse() const
+{
+    BString mimeType(fContentType);
+
+    int32 separator = mimeType.FindFirst(';');
+    if (separator >= 0)
+        mimeType.Truncate(separator);
+
+    mimeType.Trim();
+    mimeType.ToLower();
+
+    return mimeType == "application/json"
+        || mimeType == "text/json"
+        || mimeType.EndsWith("+json");
+}
+
+
 void
 MainWindow::_DisplayResponseBody()
 {
@@ -2108,4 +2151,24 @@ MainWindow::_DisplayResponseBody()
     } else {
         fResponseBodyView->SetText(displayText.String());
     }
+}
+
+
+void
+MainWindow::_UpdateResponseActions()
+{
+    bool hasBody = fHasCompletedResponse
+		&&fResponseBuffer.HasValue()
+        && fResponseBuffer->BufferLength() > 0;
+
+    bool isText = hasBody && _IsTextResponse();
+    bool isJson = hasBody && _IsJsonResponse();
+
+    // Response actions
+    fCopyResponseButton->SetEnabled(isText);
+    fSaveResponseButton->SetEnabled(hasBody);
+    fOpenResponseButton->SetEnabled(hasBody);
+
+    // Formatting options
+    fPrettifyCheck->SetEnabled(isJson);
 }

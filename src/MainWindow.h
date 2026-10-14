@@ -64,6 +64,7 @@ private:
 	BView*				_BuildCollectionPanel();
 	void        		_SendRequest();
 	void        		_ClearResponse();
+	void				_UpdateResponseActions();
 
 	AppSettings* 		fAppSettings;
 	SettingsWindow* 	fSettingsWindow;
@@ -143,10 +144,13 @@ private:
 	int64 fContentLength = -1;
 	BPrivate::Network::BExclusiveBorrow<BMallocIO> fResponseBuffer;
 
+	bool fHasCompletedResponse = false;
 	BCheckBox* fPrettifyCheck;
+	BButton*   fOpenResponseButton;
 	BButton*   fCopyResponseButton;
 	BButton*   fSaveResponseButton;
 	bool _IsTextResponse() const;
+	bool _IsJsonResponse() const;
 	void _DisplayResponseBody();
 };
 
