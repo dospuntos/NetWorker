@@ -264,107 +264,7 @@ MainWindow::MessageReceived(BMessage* message)
 
 		case RequestCompleted:
 		{
-			_StopRequestTimeout();
-			fHasCompletedResponse = true;
-
-			int id = message->GetInt32(Id, -1);
-			bool ok = message->GetBool(Success, false);
-
-			if (!fCurrentResult.has_value() || id != fCurrentResult->Identity())
-				break;
-
-			if (!ok) {
-				fStatusLabel->SetText("Request failed");
-				fSendButton->SetLabel("Send");
-				if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
-					item->SetLabel("Send request");
-				fCurrentResult.reset();
-				break;
-			}
-
-			auto& status = fCurrentResult->Status();
-			BString statusText;
-			statusText << status.code << " " << status.text;
-			fStatusLabel->SetText(statusText.String());
-
-			fResponseHeadersList->Clear();
-
-			// Reset metadata for each new response
-			fContentType = "";
-			fContentLength = -1;
-
-			if (fCurrentResult->HasFields()) {
-				const BHttpFields& fields = fCurrentResult->Fields();
-
-				for (const BHttpFields::Field& field : fields) {
-					const BHttpFields::FieldName& name = field.Name();
-
-					std::string_view value = field.Value();
-					std::string_view nameView = name;
-
-					BString headerName(nameView.data(), nameView.size());
-					BString headerValue(value.data(), value.size());
-
-					// Store important response headers
-					if (headerName.ICompare("Content-Type") == 0) {
-						fContentType = headerValue;
-					} else if (headerName.ICompare("Content-Length") == 0) {
-						char* end = nullptr;
-						const char* start = headerValue.String();
-
-						errno = 0;
-						long long length = strtoll(start, &end, 10);
-
-						if (errno == 0 && end != start && *end == '\0' && length >= 0)
-							fContentLength = length;
-					}
-
-					// Populate the response headers list
-					BRow* row = new BRow();
-
-					row->SetField(new BStringField(headerName.String()), 0);
-					row->SetField(new BStringField(headerValue.String()), 1);
-
-					fResponseHeadersList->AddRow(row);
-				}
-			}
-
-			// Process the response body
-			BMallocIO& buffer = *fResponseBuffer;
-			const void* data = buffer.Buffer();
-			size_t size = buffer.BufferLength();
-
-			if (size > 0) {
-				if (_IsTextResponse()) {
-					// Copy the response into fRawResponseBody
-					fRawResponseBody.SetTo(static_cast<const char*>(data), size);
-
-					_DisplayResponseBody();
-					fCopyResponseButton->SetEnabled(true);
-				} else {
-					// Binary response
-					fRawResponseBody = "";
-
-					BString message;
-					message.SetToFormat("Binary response (%s, %zu bytes)\n\n"
-										"Use Open... to view the response.",
-						fContentType.String(), size);
-
-					fResponseBodyView->SetText(message.String());
-					fCopyResponseButton->SetEnabled(false);
-				}
-			} else {
-				fRawResponseBody = "";
-				fResponseBodyView->SetText("(no body)");
-				fCopyResponseButton->SetEnabled(false);
-			}
-
-			_UpdateResponseActions();
-
-			fSendButton->SetLabel("Send");
-			if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
-				item->SetLabel("Send request");
-			fCurrentResult.reset();
+			_HandleRequestCompleted(message);
 			break;
 		}
 
@@ -447,425 +347,92 @@ MainWindow::MessageReceived(BMessage* message)
 		}
 
 		case M_SELECT_HISTORY:
-		{
-			int32 index = fHistoryPanel->CurrentSelection();
-			if (index >= 0) {
-				HistoryItem* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
-
-				if (item != nullptr)
-					_LoadRequestData(item->fData);
-			}
+			_HandleHistorySelection();
 			break;
-		}
 
 		case M_DELETE_HISTORY_ITEM:
-		{
-			BList selectedItems;
-			int32 index;
-			for (int32 i = 0; (index = fHistoryPanel->CurrentSelection(i)) >= 0; ++i)
-				selectedItems.AddItem((void*)(addr_t)index);
-
-			if (selectedItems.CountItems() == 0)
-				break;
-
-			for (int32 i = selectedItems.CountItems() - 1; i >= 0; i--) {
-				int32 idx = (int32)(addr_t)selectedItems.ItemAt(i);
-				BListItem* item = fHistoryPanel->RemoveItem(idx);
-				delete item;
-			}
-
-			_UpdateHistoryButtons();
-			_SaveSettings(); // Avoid stale history on disk
+			_DeleteSelectedHistoryItems();
 			break;
-		}
 
 		case M_HISTORY_SELECTION_CHANGED:
 			_UpdateHistoryButtons();
 			break;
 
 		case M_COPY_HISTORY_URL:
-		{
-			int32 index = fHistoryPanel->CurrentSelection();
-			if (index < 0)
-				break;
-
-			auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
-
-			if (be_clipboard->Lock()) {
-				be_clipboard->Clear();
-
-				BMessage* clip = be_clipboard->Data();
-				if (clip != nullptr) {
-					clip->AddData("text/plain", B_MIME_TYPE, item->fData.fUrl.String(),
-						item->fData.fUrl.Length());
-					be_clipboard->Commit();
-				}
-
-				be_clipboard->Unlock();
-			}
+			_CopyHistoryUrl();
 			break;
-		}
-
-		case M_COPY_COLLECTION_URL:
-		{
-			int32 index = fCollectionListView->CurrentSelection();
-			if (index < 0 || fActiveCollectionIndex < 0)
-				break;
-
-			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-			if (collection == nullptr)
-				break;
-
-			CollectionItem* item = collection->ItemAt(index);
-			if (item == nullptr)
-				break;
-
-			if (be_clipboard->Lock()) {
-				be_clipboard->Clear();
-
-				BMessage* clip = be_clipboard->Data();
-				if (clip != nullptr) {
-					clip->AddData("text/plain", B_MIME_TYPE, item->fData.fUrl.String(),
-						item->fData.fUrl.Length());
-					be_clipboard->Commit();
-				}
-
-				be_clipboard->Unlock();
-			}
-			break;
-		}
 
 		case M_SHOW_RENAME_DIALOG:
-		{
-			int32 index = fHistoryPanel->CurrentSelection();
-			if (index < 0)
-				break;
-
-			auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
-
-			BRect frame(0, 0, 280, 60);
-			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
-
-			RenameWindow* win = new RenameWindow(frame, item->Text(), index, BMessenger(this),
-				M_RENAME_HISTORY_ITEM);
-			win->Show();
+			_ShowRenameHistoryDialog();
 			break;
-		}
 
 		case M_RENAME_HISTORY_ITEM:
-		{
-			int32 index;
-			BString label;
-			if (message->FindInt32("index", &index) != B_OK
-				|| message->FindString("label", &label) != B_OK) {
-				break;
-			}
-
-			if (index >= 0 && index < fHistoryPanel->CountItems()) {
-				auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
-				item->SetCustomLabel(label);
-				fHistoryPanel->InvalidateItem(index);
-				_SaveSettings();
-			}
+			_RenameHistoryItem(message);
 			break;
-		}
 
 		case M_CLEAR_HISTORY:
-		{
-			BAlert* alert = new BAlert("Clear history",
-				"Remove all items from the request history? This cannot be undone.", "Cancel",
-				"Clear", nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
-
-			alert->SetShortcut(0, B_ESCAPE);
-			if (alert->Go() == 1) {
-				fHistoryPanel->MakeEmpty();
-				_SaveSettings(); // Avoid stale history on disk
-			}
-			_UpdateHistoryButtons();
-
+			_ClearHistory();
 			break;
-		}
 
 		case M_SELECT_COLLECTION:
-		{
-			int32 index;
-			if (message->FindInt32("index", &index) == B_OK) {
-				fActiveCollectionIndex = index;
-				_RefreshCollectionMenu();
-				_RefreshCollectionItemList();
-			}
+			_SelectCollection(message);
 			break;
-		}
+
+		case M_COPY_COLLECTION_URL:
+			_CopyCollectionUrl();
+			break;
 
 		case M_NEW_COLLECTION:
-		{
-			BRect frame(0, 0, 280, 60);
-			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
-			RenameWindow* win
-				= new RenameWindow(frame, "", -1, BMessenger(this), M_CREATE_COLLECTION);
-			win->SetTitle("New collection");
-			win->Show();
+			_ShowNewCollectionDialog();
 			break;
-		}
 
 		case M_CREATE_COLLECTION:
-		{
-			BString label;
-			if (message->FindString("label", &label) != B_OK || label.Length() == 0)
-				break;
-
-			Collection* collection = new Collection(label);
-			fCollections.AddItem(collection);
-			fActiveCollectionIndex = fCollections.CountItems() - 1;
-
-			_SaveCollection(collection);
-			_SaveCollectionsIndex();
-			_RefreshCollectionMenu();
-			_RefreshCollectionItemList();
+			_CreateCollection(message);
 			break;
-		}
 
 		case M_DELETE_COLLECTION:
-		{
-			if (fActiveCollectionIndex < 0)
-				break;
-
-			BString collectionName = fCollections.ItemAt(fActiveCollectionIndex)->Name().String();
-			BString alertMsg;
-			alertMsg.SetToFormat("Delete the collection '%s' permanently?\nThis cannot be undone.",
-				collectionName.String());
-
-			BAlert* alert = new BAlert("Delete collection", alertMsg, "Cancel", "Delete", nullptr,
-				B_WIDTH_AS_USUAL, B_WARNING_ALERT);
-			alert->SetShortcut(0, B_ESCAPE);
-			alert->Go(new BInvoker(new BMessage(M_CONFIRM_DELETE_COLLECTION), this));
+			_DeleteCollection();
 			break;
-		}
 
 		case M_CONFIRM_DELETE_COLLECTION:
-		{
-			int32 which = message->GetInt32("which", -1);
-			if (which == 1 && fActiveCollectionIndex >= 0) {
-				Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-				if (collection == nullptr)
-					break;
-
-				BPath dirPath;
-				_CollectionsDirectory(dirPath);
-				BPath filePath(dirPath);
-				filePath.Append(collection->FileName());
-				BEntry(filePath.Path()).Remove();
-
-				fCollections.RemoveItemAt(fActiveCollectionIndex);
-				delete collection;
-
-				fActiveCollectionIndex = fCollections.CountItems() > 0 ? 0 : -1;
-				_SaveCollectionsIndex();
-				_RefreshCollectionMenu();
-				_RefreshCollectionItemList();
-			}
+			_ConfirmDeleteCollection(message);
 			break;
-		}
 
 		case M_SAVE_TO_COLLECTION:
-		{
-			if (fActiveCollectionIndex < 0) {
-				BAlert* alert = new BAlert("save", "No active collection - create one first", "OK");
-				alert->SetShortcut(0, B_ESCAPE);
-				alert->Go();
-				break;
-			}
-
-			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-			if (collection == nullptr)
-				break;
-
-			BMenuItem* marked = fMethodMenu->FindMarked();
-			BString method(marked ? marked->Label() : "GET");
-			BString urlText(fUrlField->Text());
-			BString bodyText(fBodyPanel->CurrentBody());
-
-			BMessage params = fBodyPanel->FormEditor()->CurrentValues();
-			BMessage queryParams = fQueryParamsEditor->CurrentValues();
-			BMessage customHeaders = fHeadersPanel->CurrentHeaders();
-
-			RequestData data(method, urlText, customHeaders, bodyText, params, queryParams,
-				fBodyPanel->CurrentMode(), fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
-				fAuthPanel->CurrentValues());
-
-			collection->AddItem(new CollectionItem(data));
-			_SaveCollection(collection);
-			_RefreshCollectionItemList();
-			fStatusLabel->SetText("Saved to collection");
+			_SaveToCollection();
 			break;
-		}
 
 		case M_LOAD_COLLECTION_ITEM:
-		{
-			int32 index = fCollectionListView->CurrentSelection();
-			if (index < 0 || fActiveCollectionIndex < 0)
-				break;
-
-			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-			if (collection == nullptr)
-				break;
-			CollectionItem* item = collection->ItemAt(index);
-			if (item != nullptr)
-				_LoadRequestData(item->fData);
+			_LoadCollectionItem();
 			break;
-		}
 
 		case M_SHOW_RENAME_COLLECTION_ITEM:
-		{
-			int32 index = fCollectionListView->CurrentSelection();
-			if (index < 0 || fActiveCollectionIndex < 0)
-				break;
-
-			CollectionItem* item = fCollections.ItemAt(fActiveCollectionIndex)->ItemAt(index);
-			if (item == nullptr)
-				break;
-
-			BRect frame(0, 0, 280, 60);
-			frame.OffsetTo(Frame().left + 60, Frame().top + 60);
-			RenameWindow* win = new RenameWindow(frame, item->Text(), index, BMessenger(this),
-				M_RENAME_COLLECTION_ITEM);
-			win->Show();
+			_ShowRenameCollectionItemDialog();
 			break;
-		}
 
 		case M_RENAME_COLLECTION_ITEM:
-		{
-			int32 index;
-			BString label;
-			if (message->FindInt32("index", &index) != B_OK
-				|| message->FindString("label", &label) != B_OK) {
-				break;
-			}
-			if (fActiveCollectionIndex < 0)
-				break;
-
-			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-			if (collection == nullptr)
-				break;
-			CollectionItem* item = collection->ItemAt(index);
-			if (item != nullptr) {
-				item->SetCustomLabel(label);
-				_SaveCollection(collection);
-				_RefreshCollectionItemList();
-			}
+			_RenameCollectionItem(message);
 			break;
-		}
 
 		case M_DELETE_COLLECTION_ITEM:
-		{
-			int32 index = fCollectionListView->CurrentSelection();
-			if (index < 0 || fActiveCollectionIndex < 0)
-				break;
-
-			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-			if (collection == nullptr)
-				break;
-			CollectionItem* removed = collection->RemoveItem(index);
-			delete removed;
-			_SaveCollection(collection);
-			_RefreshCollectionItemList();
+			_DeleteCollectionItem();
 			break;
-		}
 
 		case M_EXPORT_COLLECTION:
-		{
-			if (fActiveCollectionIndex < 0) {
-				BAlert* alert
-					= new BAlert("export", "No active collections - create one first", "OK");
-				alert->SetShortcut(0, B_ESCAPE);
-				alert->Go();
-				break;
-			}
-
-			Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-			if (collection == nullptr)
-				break;
-
-			if (fExportFilePanel == nullptr) {
-				BMessenger messenger(this);
-				fExportFilePanel = new BFilePanel(B_SAVE_PANEL, &messenger, nullptr, 0, false);
-			}
-			fExportFilePanel->SetMessage(new BMessage(M_EXPORT_COLLECTION_SAVE));
-
-			fPendingExportCollection = collection;
-
-			BString suggestedName = collection->Name();
-			suggestedName << ".json";
-			fExportFilePanel->SetSaveText(suggestedName.String());
-			fExportFilePanel->Show();
+			_ShowExportCollectionPanel();
 			break;
-		}
 
 		case M_EXPORT_COLLECTION_SAVE:
-		{
-			entry_ref dirRef;
-			BString name;
-			if (message->FindRef("directory", &dirRef) != B_OK
-				|| message->FindString("name", &name) != B_OK) {
-				fPendingExportCollection = nullptr;
-				break;
-			}
-
-			if (fPendingExportCollection == nullptr)
-				break;
-
-			BPath dirPath(&dirRef);
-			BPath filePath(dirPath);
-			filePath.Append(name.String());
-
-			status_t status
-				= CollectionExporter::Export(fPendingExportCollection, BString(filePath.Path()));
-			fStatusLabel->SetText(status == B_OK ? "Collection exported" : "Export failed");
-
-			fPendingExportCollection = nullptr;
+			_ExportCollection(message);
 			break;
-		}
 
 		case M_IMPORT_COLLECTION:
-		{
-			if (fImportFilePanel == nullptr) {
-				BMessenger messenger(this);
-				fImportFilePanel = new BFilePanel(B_OPEN_PANEL, &messenger, nullptr, 0, false);
-			}
-			fImportFilePanel->SetMessage(new BMessage(M_IMPORT_COLLECTION_SELECTED));
-			fImportFilePanel->Show();
+			_ShowImportCollectionPanel();
 			break;
-		}
 
 		case M_IMPORT_COLLECTION_SELECTED:
-		{
-			entry_ref ref;
-			if (message->FindRef("refs", &ref) != B_OK)
-				break;
-
-			BPath path(&ref);
-
-			Collection* imported = nullptr;
-			BString error;
-			status_t status = CollectionImporter::Import(BString(path.Path()), imported, error);
-
-			if (status != B_OK) {
-				BAlert* alert = new BAlert("Import failed", error.String(), "OK");
-				alert->Go();
-				break;
-			}
-
-			fCollections.AddItem(imported);
-			fActiveCollectionIndex = fCollections.CountItems() - 1;
-
-			_SaveCollection(imported);
-			_SaveCollectionsIndex();
-			_RefreshCollectionMenu();
-			_RefreshCollectionItemList();
-
-			fStatusLabel->SetText("Collection imported");
+			_ImportCollection(message);
 			break;
-		}
 
 		case M_BODY_MODE_CHANGED:
 			fBodyPanel->UpdateVisibleCard();
@@ -892,19 +459,8 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 
 		case M_COPY_RESPONSE_BODY:
-		{
-			BString text(fResponseBodyView->Text());
-			if (be_clipboard->Lock()) {
-				be_clipboard->Clear();
-				BMessage* clip = be_clipboard->Data();
-				if (clip != nullptr) {
-					clip->AddData("text/plain", B_MIME_TYPE, text.String(), text.Length());
-					be_clipboard->Commit();
-				}
-				be_clipboard->Unlock();
-			}
+			_CopyTextToClipboard(BString(fResponseBodyView->Text()));
 			break;
-		}
 
 		case M_SAVE_RESPONSE_BODY_PANEL:
 		{
@@ -944,7 +500,6 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_OPEN_IN_EDITOR:
 		{
 			entry_ref ref;
-
 			status_t status = ResponseFileManager::CreateTextFile(fResponseBuffer->Buffer(),
 				fResponseBuffer->BufferLength(), ref);
 
@@ -965,7 +520,6 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_OPEN_IN_BROWSER:
 		{
 			entry_ref ref;
-
 			status_t status = ResponseFileManager::CreateFile(fResponseBuffer->Buffer(),
 				fResponseBuffer->BufferLength(), fContentType, ref);
 
@@ -1039,7 +593,6 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_TOGGLE_PREVIEW:
 		{
 			bool visible = !fRequestAreaSplit->IsItemCollapsed(1);
-
 			fRequestAreaSplit->SetItemCollapsed(1, visible);
 
 			if (BMenuItem* item = fMenuBar->FindItem(M_TOGGLE_PREVIEW))
@@ -1050,7 +603,6 @@ MainWindow::MessageReceived(BMessage* message)
 		case M_TOGGLE_SIDEBAR:
 		{
 			bool visible = !fOuterSplit->IsItemCollapsed(1);
-
 			fOuterSplit->SetItemCollapsed(1, visible);
 
 			if (BMenuItem* item = fMenuBar->FindItem(M_TOGGLE_SIDEBAR))
@@ -1156,24 +708,34 @@ MainWindow::QuitRequested()
 	return true;
 }
 
-
-BView*
-MainWindow::_BuildPreviewPanel()
+// Layout
+void
+MainWindow::_BuildLayout()
 {
-	fPreviewPanel = new BTextView("previewPanel");
-	fPreviewPanel->MakeEditable(false);
+	BView* requestArea = _BuildRequestPanel();
+	BView* responsePanel = _BuildResponsePanel();
+	BView* historyPanel = _BuildHistoryPanel();
+	BView* collectionsPanel = _BuildCollectionPanel();
 
-	BStringView* previewLabel = new BStringView("previewLabel", "Request preview");
-	previewLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+	fSplitView = new BSplitView(B_VERTICAL, B_USE_SMALL_SPACING);
+	fSplitView->AddChild(requestArea, 0.5f);
+	fSplitView->AddChild(responsePanel, 0.5f);
 
-	fPreviewPanelScroll
-		= new BScrollView("previewScroll", fPreviewPanel, B_WILL_DRAW | B_FRAME_EVENTS, true, true);
+	// Sidebar: History / Collections tabs
+	fSidebarTabs = new BTabView("sidebarTabs");
+	fSidebarTabs->AddTab(historyPanel);
+	fSidebarTabs->TabAt(0)->SetLabel("History");
+	fSidebarTabs->AddTab(collectionsPanel);
+	fSidebarTabs->TabAt(1)->SetLabel("Collections");
 
-	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
-		.SetInsets(B_USE_WINDOW_INSETS)
-		.Add(previewLabel)
-		.Add(fPreviewPanelScroll)
-		.View();
+	fOuterSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
+	fOuterSplit->AddChild(fSplitView, 0.8f);
+	fOuterSplit->AddChild(fSidebarTabs, 0.2f);
+
+	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(fOuterSplit).End();
+	_UpdateHistoryButtons();
+	_UpdatePreview();
+	_RefreshCollectionMenu();
 }
 
 
@@ -1250,6 +812,26 @@ MainWindow::_BuildRequestPanel()
 	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
 		.Add(requestTopBar)
 		.Add(fRequestAreaSplit)
+		.View();
+}
+
+
+BView*
+MainWindow::_BuildPreviewPanel()
+{
+	fPreviewPanel = new BTextView("previewPanel");
+	fPreviewPanel->MakeEditable(false);
+
+	BStringView* previewLabel = new BStringView("previewLabel", "Request preview");
+	previewLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+
+	fPreviewPanelScroll
+		= new BScrollView("previewScroll", fPreviewPanel, B_WILL_DRAW | B_FRAME_EVENTS, true, true);
+
+	return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.SetInsets(B_USE_WINDOW_INSETS)
+		.Add(previewLabel)
+		.Add(fPreviewPanelScroll)
 		.View();
 }
 
@@ -1376,36 +958,7 @@ MainWindow::_BuildCollectionPanel()
 }
 
 
-void
-MainWindow::_BuildLayout()
-{
-	BView* requestArea = _BuildRequestPanel();
-	BView* responsePanel = _BuildResponsePanel();
-	BView* historyPanel = _BuildHistoryPanel();
-	BView* collectionsPanel = _BuildCollectionPanel();
-
-	fSplitView = new BSplitView(B_VERTICAL, B_USE_SMALL_SPACING);
-	fSplitView->AddChild(requestArea, 0.5f);
-	fSplitView->AddChild(responsePanel, 0.5f);
-
-	// Sidebar: History / Collections tabs
-	fSidebarTabs = new BTabView("sidebarTabs");
-	fSidebarTabs->AddTab(historyPanel);
-	fSidebarTabs->TabAt(0)->SetLabel("History");
-	fSidebarTabs->AddTab(collectionsPanel);
-	fSidebarTabs->TabAt(1)->SetLabel("Collections");
-
-	fOuterSplit = new BSplitView(B_HORIZONTAL, B_USE_SMALL_SPACING);
-	fOuterSplit->AddChild(fSplitView, 0.8f);
-	fOuterSplit->AddChild(fSidebarTabs, 0.2f);
-
-	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(fOuterSplit).End();
-	_UpdateHistoryButtons();
-	_UpdatePreview();
-	_RefreshCollectionMenu();
-}
-
-
+// Request handling
 void
 MainWindow::_SendRequest()
 {
@@ -1499,7 +1052,240 @@ MainWindow::_SendRequest()
 	}
 }
 
+void
+MainWindow::_HandleRequestCompleted(BMessage* message)
+{
+	using namespace BPrivate::Network::UrlEventData;
 
+	_StopRequestTimeout();
+	fHasCompletedResponse = true;
+
+	int id = message->GetInt32(Id, -1);
+	bool ok = message->GetBool(Success, false);
+
+	if (!fCurrentResult.has_value() || id != fCurrentResult->Identity())
+		return;
+
+	if (!ok) {
+		fStatusLabel->SetText("Request failed");
+		fSendButton->SetLabel("Send");
+		if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
+			item->SetLabel("Send request");
+		fCurrentResult.reset();
+		return;
+	}
+
+	auto& status = fCurrentResult->Status();
+	BString statusText;
+	statusText << status.code << " " << status.text;
+	fStatusLabel->SetText(statusText.String());
+
+	fResponseHeadersList->Clear();
+
+	// Reset metadata for each new response
+	fContentType = "";
+	fContentLength = -1;
+
+	if (fCurrentResult->HasFields()) {
+		const BHttpFields& fields = fCurrentResult->Fields();
+
+		for (const BHttpFields::Field& field : fields) {
+			const BHttpFields::FieldName& name = field.Name();
+
+			std::string_view value = field.Value();
+			std::string_view nameView = name;
+
+			BString headerName(nameView.data(), nameView.size());
+			BString headerValue(value.data(), value.size());
+
+			// Store important response headers
+			if (headerName.ICompare("Content-Type") == 0) {
+				fContentType = headerValue;
+			} else if (headerName.ICompare("Content-Length") == 0) {
+				char* end = nullptr;
+				const char* start = headerValue.String();
+
+				errno = 0;
+				long long length = strtoll(start, &end, 10);
+
+				if (errno == 0 && end != start && *end == '\0' && length >= 0)
+					fContentLength = length;
+			}
+
+			// Populate the response headers list
+			BRow* row = new BRow();
+
+			row->SetField(new BStringField(headerName.String()), 0);
+			row->SetField(new BStringField(headerValue.String()), 1);
+
+			fResponseHeadersList->AddRow(row);
+		}
+	}
+
+	// Process the response body
+	BMallocIO& buffer = *fResponseBuffer;
+	const void* data = buffer.Buffer();
+	size_t size = buffer.BufferLength();
+
+	if (size > 0) {
+		if (_IsTextResponse()) {
+			// Copy the response into fRawResponseBody
+			fRawResponseBody.SetTo(static_cast<const char*>(data), size);
+
+			_DisplayResponseBody();
+			fCopyResponseButton->SetEnabled(true);
+		} else {
+			// Binary response
+			fRawResponseBody = "";
+
+			BString message;
+			message.SetToFormat("Binary response (%s, %zu bytes)\n\n"
+								"Use Open... to view the response.",
+				fContentType.String(), size);
+
+			fResponseBodyView->SetText(message.String());
+			fCopyResponseButton->SetEnabled(false);
+		}
+	} else {
+		fRawResponseBody = "";
+		fResponseBodyView->SetText("(no body)");
+		fCopyResponseButton->SetEnabled(false);
+	}
+
+	_UpdateResponseActions();
+
+	fSendButton->SetLabel("Send");
+	if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
+		item->SetLabel("Send request");
+	fCurrentResult.reset();
+}
+
+
+void
+MainWindow::_CancelCurrentRequest()
+{
+	if (!fCurrentResult.has_value())
+		return;
+
+	fSession.Cancel(fCurrentResult.value());
+	fCurrentResult.reset();
+
+	_StopRequestTimeout();
+}
+
+
+void
+MainWindow::_StopRequestTimeout()
+{
+	delete fRequestTimeoutRunner;
+	fRequestTimeoutRunner = nullptr;
+}
+
+
+void
+MainWindow::_LoadRequestData(const RequestData& data)
+{
+	fUrlField->SetText(data.fUrl.String());
+	fBodyPanel->LoadFrom(data.fBodyMode, data.fBody, data.fParams, data.fFilePath);
+
+	for (int32 i = 0; i < fMethodMenu->CountItems(); ++i) {
+		BMenuItem* mi = fMethodMenu->ItemAt(i);
+		if (data.fMethod == mi->Label()) {
+			mi->SetMarked(true);
+			break;
+		}
+	}
+
+	BString username, password, token, headerName, headerValue;
+	data.fAuthValues.FindString("username", &username);
+	data.fAuthValues.FindString("password", &password);
+	data.fAuthValues.FindString("token", &token);
+	data.fAuthValues.FindString("headerName", &headerName);
+	data.fAuthValues.FindString("headerValue", &headerValue);
+
+	fAuthPanel->LoadFrom(data.fAuthType, data.fAuthValues);
+	fQueryParamsEditor->LoadFrom(data.fQueryParams);
+	fHeadersPanel->LoadFrom(data.fCustomHeaders);
+}
+
+
+BString
+MainWindow::_BuildFullUrl() const
+{
+	BString url(fUrlField->Text());
+	BString params = fQueryParamsEditor->FormEncodedValues();
+
+	if (params.IsEmpty())
+		return url;
+
+	url << (url.FindFirst('?') >= 0 ? "&" : "?");
+	url << params;
+
+	return url;
+}
+
+
+BMessage
+MainWindow::_ComputedHeaders() const
+{
+	BMessage headers;
+
+	BString urlText = _BuildFullUrl();
+	BUrl url(urlText, false);
+	if (url.IsValid()) {
+		BMessage h;
+		h.AddString("key", "Host");
+		h.AddString("value", url.Host());
+		headers.AddMessage("header", &h);
+	}
+
+	BMenuItem* marked = fMethodMenu->FindMarked();
+	BString method(marked ? marked->Label() : "GET");
+	bool bodyAllowed = (method != "GET" && method != "HEAD" && fBodyPanel->CurrentMode() != "none");
+
+	if (bodyAllowed) {
+		BString body = fBodyPanel->CurrentBody();
+		if (body.Length() > 0) {
+			BMessage h;
+			h.AddString("key", "Content-Type");
+			h.AddString("value", fBodyPanel->CurrentContentType());
+			headers.AddMessage("header", &h);
+
+			BMessage h2;
+			h2.AddString("key", "Content-Length");
+			BString len;
+			len << body.Length();
+			h2.AddString("value", len);
+			headers.AddMessage("header", &h2);
+		}
+	}
+
+	BHttpFields authFields;
+	fAuthPanel->ApplyTo(authFields);
+	for (const BHttpFields::Field& field : authFields) {
+		std::string_view name = field.Name();
+		std::string_view value = field.Value();
+		BMessage h;
+		h.AddString("key", BString(name.data(), name.size()));
+		h.AddString("value", BString(value.data(), value.size()));
+		headers.AddMessage("header", &h);
+	}
+
+	return headers;
+}
+
+
+void
+MainWindow::_ApplyDefaultUserAgent()
+{
+	if (fAppSettings->fDefaultUserAgent.Length() > 0) {
+		fHeadersPanel->AddCustomHeaderIfMissing("User-Agent", fAppSettings->fDefaultUserAgent);
+		_UpdatePreview();
+	}
+}
+
+
+// Response handling
 void
 MainWindow::_ClearResponse()
 {
@@ -1523,6 +1309,869 @@ MainWindow::_ClearResponse()
 }
 
 
+void
+MainWindow::_DisplayResponseBody()
+{
+	BString displayText = fRawResponseBody;
+
+	if (fPrettifyCheck->Value() == B_CONTROL_ON) {
+		try {
+			nlohmann::json parsed = nlohmann::json::parse(fRawResponseBody.String());
+			displayText = parsed.dump(2).c_str();
+		} catch (const nlohmann::json::parse_error&) {
+		}
+	}
+
+	int32 length = displayText.Length();
+	if (fAppSettings->fMaxResponseSize > 0 && length > fAppSettings->fMaxResponseSize) {
+		BString truncated;
+		truncated.SetTo(displayText.String(), (int32)fAppSettings->fMaxResponseSize);
+		BString notice;
+		notice << "\n\n[Response truncated, showing "
+			   << (fAppSettings->fMaxResponseSize / (1024 * 1024)) << " MB of "
+			   << (length / (1024 * 1024)) << " MB. Adjust the limit in Settings.]";
+		BString response;
+		response << truncated << notice;
+		fResponseBodyView->SetText((notice).String());
+	} else {
+		fResponseBodyView->SetText(displayText.String());
+	}
+}
+
+
+void
+MainWindow::_UpdateResponseActions()
+{
+	bool hasBody = fHasCompletedResponse && fResponseBuffer.HasValue()
+		&& fResponseBuffer->BufferLength() > 0;
+
+	bool isText = hasBody && _IsTextResponse();
+	bool isJson = hasBody && _IsJsonResponse();
+
+	// Response actions
+	fCopyResponseButton->SetEnabled(isText);
+	fSaveResponseButton->SetEnabled(hasBody);
+	fOpenResponseButton->SetEnabled(hasBody);
+
+	// Formatting options
+	fPrettifyCheck->SetEnabled(isJson);
+}
+
+
+bool
+MainWindow::_IsTextResponse() const
+{
+	BString mimeType(fContentType);
+
+	// Remove charset and other parameters
+	int32 separator = mimeType.FindFirst(';');
+	if (separator >= 0)
+		mimeType.Truncate(separator);
+
+	mimeType.Trim();
+	mimeType.ToLower();
+
+	if (mimeType.StartsWith("text/"))
+		return true;
+
+	if (mimeType == "application/json" || mimeType.EndsWith("+json"))
+		return true;
+
+	if (mimeType == "application/xml" || mimeType.EndsWith("+xml"))
+		return true;
+
+	if (mimeType == "application/javascript")
+		return true;
+
+	return false;
+}
+
+
+bool
+MainWindow::_IsJsonResponse() const
+{
+	BString mimeType(fContentType);
+
+	int32 separator = mimeType.FindFirst(';');
+	if (separator >= 0)
+		mimeType.Truncate(separator);
+
+	mimeType.Trim();
+	mimeType.ToLower();
+
+	return mimeType == "application/json" || mimeType == "text/json" || mimeType.EndsWith("+json");
+}
+
+
+BString
+MainWindow::_FormatFileSize(int64 bytes)
+{
+	BString result;
+	if (bytes < 1024)
+		result << bytes << " B";
+	else if (bytes < 1024 * 1024)
+		result << (bytes / 1024.0f) << " KB";
+	else
+		result << (bytes / (1024.0f * 1024.0f)) << " MB";
+	return result;
+}
+
+
+// Preview
+void
+MainWindow::_UpdatePreview()
+{
+	BMenuItem* marked = fMethodMenu->FindMarked();
+	BString method(marked ? marked->Label() : "GET");
+	BString urlText = _BuildFullUrl();
+
+	BUrl url(urlText, false);
+
+	BString preview;
+	preview << method << " " << urlText << " HTTP/1.1\n";
+	if (url.IsValid())
+		preview << "Host: " << url.Host() << "\n";
+
+	fHeadersPanel->SetComputedHeaders(_ComputedHeaders());
+	BHttpFields previewFields;
+	fAuthPanel->ApplyTo(previewFields);
+	for (const BHttpFields::Field& field : previewFields) {
+		std::string_view name = field.Name();
+		std::string_view value = field.Value();
+		preview << BString(name.data(), name.size()) << ": " << BString(value.data(), value.size())
+				<< "\n";
+	}
+
+	// Custom headers
+	BMessage customHeaders = fHeadersPanel->CurrentHeaders();
+	BMessage h;
+	for (int32 i = 0; customHeaders.FindMessage("header", i, &h) == B_OK; i++) {
+		BString key, value;
+		h.FindString("key", &key);
+		h.FindString("value", &value);
+		preview << key << ": " << value << "\n";
+		h.MakeEmpty();
+	}
+
+	BString mode = fBodyPanel->CurrentMode();
+	bool bodyAllowed = (method != "GET" && method != "HEAD" && mode != "none");
+
+	if (bodyAllowed) {
+		if (mode == "file") {
+			BString path = fBodyPanel->CurrentFilePath();
+			if (path.Length() > 0) {
+				preview << "Content-Type: " << fBodyPanel->CurrentContentType() << "\n";
+				preview << "Content-Length: " << fBodyPanel->CurrentBodyLength() << "\n\n";
+				preview << "[File: " << path << ", "
+						<< _FormatFileSize(fBodyPanel->CurrentBodyLength()) << "]";
+			}
+		} else {
+			BString body = fBodyPanel->CurrentBody();
+			if (body.Length() > 0) {
+				preview << "Content-Type: " << fBodyPanel->CurrentContentType() << "\n";
+				preview << "Content-Length: " << body.Length() << "\n\n";
+				preview << body;
+			}
+		}
+	}
+
+	fPreviewPanel->SetText(preview.String());
+}
+
+
+// History
+void
+MainWindow::_HandleHistorySelection()
+{
+	int32 index = fHistoryPanel->CurrentSelection();
+	if (index >= 0) {
+		HistoryItem* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
+
+		if (item != nullptr)
+			_LoadRequestData(item->fData);
+	}
+}
+
+
+void
+MainWindow::_DeleteSelectedHistoryItems()
+{
+	BList selectedItems;
+	int32 index;
+	for (int32 i = 0; (index = fHistoryPanel->CurrentSelection(i)) >= 0; ++i)
+		selectedItems.AddItem((void*)(addr_t)index);
+
+	if (selectedItems.CountItems() == 0)
+		return;
+
+	for (int32 i = selectedItems.CountItems() - 1; i >= 0; i--) {
+		int32 idx = (int32)(addr_t)selectedItems.ItemAt(i);
+		BListItem* item = fHistoryPanel->RemoveItem(idx);
+		delete item;
+	}
+
+	_UpdateHistoryButtons();
+	_SaveSettings(); // Avoid stale history on disk
+}
+
+
+void
+MainWindow::_UpdateHistoryButtons()
+{
+	bool hasItems = fHistoryPanel->CountItems() > 0;
+	fClearHistoryBtn->SetEnabled(hasItems);
+}
+
+
+void
+MainWindow::_CopyHistoryUrl()
+{
+	int32 index = fHistoryPanel->CurrentSelection();
+	if (index < 0)
+		return;
+
+	auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
+
+	if (item != nullptr)
+		_CopyTextToClipboard(item->fData.fUrl);
+}
+
+
+void
+MainWindow::_ShowRenameHistoryDialog()
+{
+	int32 index = fHistoryPanel->CurrentSelection();
+	if (index < 0)
+		return;
+
+	auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
+
+	BRect frame(0, 0, 280, 60);
+	frame.OffsetTo(Frame().left + 60, Frame().top + 60);
+
+	RenameWindow* win = new RenameWindow(frame, item->Text(), index, BMessenger(this),
+		M_RENAME_HISTORY_ITEM);
+	win->Show();
+}
+
+
+void
+MainWindow::_RenameHistoryItem(BMessage* message)
+{
+    int32 index;
+    BString label;
+
+    if (message->FindInt32("index", &index) != B_OK
+        || message->FindString("label", &label) != B_OK) {
+        return;
+    }
+
+    if (index >= 0 && index < fHistoryPanel->CountItems()) {
+        auto* item = static_cast<HistoryItem*>(fHistoryPanel->ItemAt(index));
+
+        item->SetCustomLabel(label);
+        fHistoryPanel->InvalidateItem(index);
+        _SaveSettings();
+    }
+}
+
+
+void
+MainWindow::_ClearHistory()
+{
+	BAlert* alert = new BAlert("Clear history",
+		"Remove all items from the request history? This cannot be undone.", "Cancel",
+		"Clear", nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+
+	alert->SetShortcut(0, B_ESCAPE);
+	if (alert->Go() == 1) {
+		fHistoryPanel->MakeEmpty();
+		_SaveSettings(); // Avoid stale history on disk
+	}
+	_UpdateHistoryButtons();
+}
+
+
+void
+MainWindow::_TrimHistory()
+{
+	while (fHistoryPanel->CountItems() > fAppSettings->fMaxHistoryItems) {
+		BListItem* item = fHistoryPanel->RemoveItem(fHistoryPanel->CountItems() - 1);
+		delete item;
+	}
+	_UpdateHistoryButtons();
+}
+
+
+// Collections
+void
+MainWindow::_SelectCollection(BMessage* message)
+{
+	int32 index;
+	if (message->FindInt32("index", &index) != B_OK)
+		return;
+
+	fActiveCollectionIndex = index;
+	_RefreshCollectionMenu();
+	_RefreshCollectionItemList();
+}
+
+void
+MainWindow::_ShowNewCollectionDialog()
+{
+	BRect frame(0, 0, 280, 60);
+	frame.OffsetTo(Frame().left + 60, Frame().top + 60);
+	RenameWindow* win
+		= new RenameWindow(frame, "", -1, BMessenger(this), M_CREATE_COLLECTION);
+	win->SetTitle("New collection");
+	win->Show();
+}
+
+
+void
+MainWindow::_CreateCollection(BMessage* message)
+{
+    BString label;
+
+    if (message->FindString("label", &label) != B_OK
+        || label.Length() == 0) {
+        return;
+    }
+
+    Collection* collection = new Collection(label);
+
+    fCollections.AddItem(collection);
+    fActiveCollectionIndex = fCollections.CountItems() - 1;
+
+    _SaveCollection(collection);
+    _SaveCollectionsIndex();
+    _RefreshCollectionMenu();
+    _RefreshCollectionItemList();
+}
+
+
+void
+MainWindow::_DeleteCollection()
+{
+    if (fActiveCollectionIndex < 0)
+        return;
+
+    BString collectionName
+        = fCollections.ItemAt(fActiveCollectionIndex)->Name().String();
+
+    BString alertMsg;
+    alertMsg.SetToFormat(
+        "Delete the collection '%s' permanently?\n"
+        "This cannot be undone.",
+        collectionName.String());
+
+    BAlert* alert = new BAlert("Delete collection", alertMsg,
+        "Cancel", "Delete", nullptr,
+        B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+
+    alert->SetShortcut(0, B_ESCAPE);
+    alert->Go(new BInvoker(new BMessage(M_CONFIRM_DELETE_COLLECTION), this));
+}
+
+
+void
+MainWindow::_ConfirmDeleteCollection(BMessage* message)
+{
+    int32 which = message->GetInt32("which", -1);
+
+    if (which != 1 || fActiveCollectionIndex < 0)
+        return;
+
+    Collection* collection
+        = fCollections.ItemAt(fActiveCollectionIndex);
+
+    if (collection == nullptr)
+        return;
+
+    BPath dirPath;
+    _CollectionsDirectory(dirPath);
+
+    BPath filePath(dirPath);
+    filePath.Append(collection->FileName());
+
+    BEntry(filePath.Path()).Remove();
+
+    fCollections.RemoveItemAt(fActiveCollectionIndex);
+    delete collection;
+
+    fActiveCollectionIndex
+        = fCollections.CountItems() > 0 ? 0 : -1;
+
+    _SaveCollectionsIndex();
+    _RefreshCollectionMenu();
+    _RefreshCollectionItemList();
+}
+
+
+void
+MainWindow::_SaveToCollection()
+{
+    if (fActiveCollectionIndex < 0) {
+        BAlert* alert = new BAlert("save",
+            "No active collection - create one first", "OK");
+
+        alert->SetShortcut(0, B_ESCAPE);
+        alert->Go();
+        return;
+    }
+
+    Collection* collection
+        = fCollections.ItemAt(fActiveCollectionIndex);
+
+    if (collection == nullptr)
+        return;
+
+    BMenuItem* marked = fMethodMenu->FindMarked();
+    BString method(marked ? marked->Label() : "GET");
+    BString urlText(fUrlField->Text());
+    BString bodyText(fBodyPanel->CurrentBody());
+
+    BMessage params = fBodyPanel->FormEditor()->CurrentValues();
+    BMessage queryParams = fQueryParamsEditor->CurrentValues();
+    BMessage customHeaders = fHeadersPanel->CurrentHeaders();
+
+    RequestData data(method, urlText, customHeaders, bodyText,
+        params, queryParams, fBodyPanel->CurrentMode(),
+        fBodyPanel->CurrentFilePath(), fAuthPanel->CurrentType(),
+        fAuthPanel->CurrentValues());
+
+    collection->AddItem(new CollectionItem(data));
+
+    _SaveCollection(collection);
+    _RefreshCollectionItemList();
+
+    fStatusLabel->SetText("Saved to collection");
+}
+
+
+void
+MainWindow::_LoadCollectionItem()
+{
+	int32 index = fCollectionListView->CurrentSelection();
+	if (index < 0 || fActiveCollectionIndex < 0)
+		return;
+
+	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+	if (collection == nullptr)
+		return;
+	CollectionItem* item = collection->ItemAt(index);
+	if (item != nullptr)
+		_LoadRequestData(item->fData);
+}
+
+
+void
+MainWindow::_ShowRenameCollectionItemDialog()
+{
+	int32 index = fCollectionListView->CurrentSelection();
+	if (index < 0 || fActiveCollectionIndex < 0)
+		return;
+
+	CollectionItem* item = fCollections.ItemAt(fActiveCollectionIndex)->ItemAt(index);
+	if (item == nullptr)
+		return;
+
+	BRect frame(0, 0, 280, 60);
+	frame.OffsetTo(Frame().left + 60, Frame().top + 60);
+	RenameWindow* win = new RenameWindow(frame, item->Text(), index, BMessenger(this),
+		M_RENAME_COLLECTION_ITEM);
+	win->Show();
+}
+
+
+void
+MainWindow::_RenameCollectionItem(BMessage* message)
+{
+    int32 index;
+    BString label;
+
+    if (message->FindInt32("index", &index) != B_OK
+        || message->FindString("label", &label) != B_OK) {
+        return;
+    }
+
+    if (fActiveCollectionIndex < 0)
+        return;
+
+    Collection* collection
+        = fCollections.ItemAt(fActiveCollectionIndex);
+
+    if (collection == nullptr)
+        return;
+
+    CollectionItem* item = collection->ItemAt(index);
+
+    if (item != nullptr) {
+        item->SetCustomLabel(label);
+        _SaveCollection(collection);
+        _RefreshCollectionItemList();
+    }
+}
+
+
+void
+MainWindow::_DeleteCollectionItem()
+{
+	int32 index = fCollectionListView->CurrentSelection();
+	if (index < 0 || fActiveCollectionIndex < 0)
+		return;
+
+	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+	if (collection == nullptr)
+		return;
+	CollectionItem* removed = collection->RemoveItem(index);
+	delete removed;
+	_SaveCollection(collection);
+	_RefreshCollectionItemList();
+	return;
+}
+
+
+void
+MainWindow::_ShowExportCollectionPanel()
+{
+	if (fActiveCollectionIndex < 0) {
+		BAlert* alert = new BAlert("export", "No active collections - create one first", "OK");
+		alert->SetShortcut(0, B_ESCAPE);
+		alert->Go();
+		return;
+	}
+
+	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+	if (collection == nullptr)
+		return;
+
+	if (fExportFilePanel == nullptr) {
+		BMessenger messenger(this);
+		fExportFilePanel = new BFilePanel(B_SAVE_PANEL, &messenger, nullptr, 0, false);
+	}
+	fExportFilePanel->SetMessage(new BMessage(M_EXPORT_COLLECTION_SAVE));
+
+	fPendingExportCollection = collection;
+
+	BString suggestedName = collection->Name();
+	suggestedName << ".json";
+	fExportFilePanel->SetSaveText(suggestedName.String());
+	fExportFilePanel->Show();
+}
+
+
+void
+MainWindow::_ExportCollection(BMessage* message)
+{
+	entry_ref dirRef;
+	BString name;
+	if (message->FindRef("directory", &dirRef) != B_OK
+		|| message->FindString("name", &name) != B_OK) {
+		fPendingExportCollection = nullptr;
+		return;
+	}
+
+	if (fPendingExportCollection == nullptr)
+		return;
+
+	BPath dirPath(&dirRef);
+	BPath filePath(dirPath);
+	filePath.Append(name.String());
+
+	status_t status
+		= CollectionExporter::Export(fPendingExportCollection, BString(filePath.Path()));
+	fStatusLabel->SetText(status == B_OK ? "Collection exported" : "Export failed");
+
+	fPendingExportCollection = nullptr;
+}
+
+
+void
+MainWindow::_ShowImportCollectionPanel()
+{
+    if (fImportFilePanel == nullptr) {
+        BMessenger messenger(this);
+        fImportFilePanel = new BFilePanel(
+            B_OPEN_PANEL, &messenger, nullptr, 0, false);
+    }
+
+    fImportFilePanel->SetMessage(
+        new BMessage(M_IMPORT_COLLECTION_SELECTED));
+
+    fImportFilePanel->Show();
+}
+
+
+void
+MainWindow::_ImportCollection(BMessage* message)
+{
+    entry_ref ref;
+
+    if (message->FindRef("refs", &ref) != B_OK)
+        return;
+
+    BPath path(&ref);
+
+    Collection* imported = nullptr;
+    BString error;
+
+    status_t status = CollectionImporter::Import(
+        BString(path.Path()), imported, error);
+
+    if (status != B_OK) {
+        BAlert* alert = new BAlert(
+            "Import failed", error.String(), "OK");
+
+        alert->Go();
+        return;
+    }
+
+    fCollections.AddItem(imported);
+    fActiveCollectionIndex = fCollections.CountItems() - 1;
+
+    _SaveCollection(imported);
+    _SaveCollectionsIndex();
+    _RefreshCollectionMenu();
+    _RefreshCollectionItemList();
+
+    fStatusLabel->SetText("Collection imported");
+}
+
+
+void
+MainWindow::_CopyCollectionUrl()
+{
+	int32 index = fCollectionListView->CurrentSelection();
+	if (index < 0 || fActiveCollectionIndex < 0)
+		return;
+
+	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+	if (collection == nullptr)
+		return;
+
+	CollectionItem* item = collection->ItemAt(index);
+	if (item != nullptr)
+		_CopyTextToClipboard(item->fData.fUrl);
+}
+
+status_t
+MainWindow::_CollectionsDirectory(BPath& path)
+{
+	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
+	if (status != B_OK)
+		return status;
+
+	status = path.Append(kSettingsDirName);
+	if (status != B_OK)
+		return status;
+
+	status = path.Append(kCollectionsDirName);
+	if (status != B_OK)
+		return status;
+
+	return create_directory(path.Path(), 0755);
+}
+
+
+status_t
+MainWindow::_SaveCollection(Collection* collection)
+{
+	BPath dirPath;
+	status_t status = _CollectionsDirectory(dirPath);
+	if (status != B_OK)
+		return status;
+
+	BPath filePath(dirPath);
+	status = filePath.Append(collection->FileName());
+	if (status != B_OK)
+		return status;
+
+	BFile file;
+	status = file.SetTo(filePath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+	if (status != B_OK)
+		return status;
+
+	BMessage archive;
+	collection->Archive(archive);
+	return archive.Flatten(&file);
+}
+
+
+status_t
+MainWindow::_LoadCollection(const BString& fileName, Collection*& outCollection)
+{
+	BPath dirPath;
+	status_t status = _CollectionsDirectory(dirPath);
+	if (status != B_OK)
+		return status;
+
+	BPath filePath(dirPath);
+	status = filePath.Append(fileName);
+	if (status != B_OK)
+		return status;
+
+	BFile file;
+	status = file.SetTo(filePath.Path(), B_READ_ONLY);
+	if (status != B_OK)
+		return status;
+
+	BMessage archive;
+	status = archive.Unflatten(&file);
+	if (status != B_OK)
+		return status;
+
+	outCollection = new Collection(archive);
+	outCollection->SetFileName(fileName);
+	return B_OK;
+}
+
+
+status_t
+MainWindow::_SaveCollectionsIndex()
+{
+	BPath dirPath;
+	status_t status = _CollectionsDirectory(dirPath);
+	if (status != B_OK)
+		return status;
+
+	BPath indexPath(dirPath);
+	status = indexPath.Append(kCollectionsIndexFileName);
+	if (status != B_OK)
+		return status;
+
+	BFile file;
+	status = file.SetTo(indexPath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+	if (status != B_OK)
+		return status;
+
+	BMessage index;
+	for (int32 i = 0; i < fCollections.CountItems(); ++i)
+		index.AddString("fileName", fCollections.ItemAt(i)->FileName());
+
+	if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems())
+		index.AddString("activeFileName", fCollections.ItemAt(fActiveCollectionIndex)->FileName());
+
+	return index.Flatten(&file);
+}
+
+
+status_t
+MainWindow::_LoadCollectionsIndex()
+{
+	BPath dirPath;
+	status_t status = _CollectionsDirectory(dirPath);
+	if (status != B_OK)
+		return status;
+
+	BPath indexPath(dirPath);
+	status = indexPath.Append(kCollectionsIndexFileName);
+	if (status != B_OK)
+		return status;
+
+	BFile file;
+	status = file.SetTo(indexPath.Path(), B_READ_ONLY);
+	if (status != B_OK)
+		return B_OK; // no index yet (first run)
+
+	BMessage index;
+	status = index.Unflatten(&file);
+	if (status != B_OK)
+		return status;
+
+	BString fileName;
+	for (int32 i = 0; index.FindString("fileName", i, &fileName) == B_OK; ++i) {
+		Collection* collection = nullptr;
+		if (_LoadCollection(fileName, collection) == B_OK)
+			fCollections.AddItem(collection);
+	}
+
+	fActiveCollectionIndex = -1; // default: none, if nothing matches
+
+	BString activeFileName;
+	if (index.FindString("activeFileName", &activeFileName) == B_OK) {
+		for (int32 i = 0; i < fCollections.CountItems(); ++i) {
+			if (fCollections.ItemAt(i)->FileName() == activeFileName) {
+				fActiveCollectionIndex = i;
+				break;
+			}
+		}
+	}
+
+	_RefreshCollectionMenu();
+
+	return B_OK;
+}
+
+
+void
+MainWindow::_RefreshCollectionMenu()
+{
+	for (int32 i = fCollectionMenu->CountItems() - 1; i >= 0; --i)
+		delete fCollectionMenu->RemoveItem(i);
+
+	for (int32 i = 0; i < fCollections.CountItems(); ++i) {
+		BMessage* msg = new BMessage(M_SELECT_COLLECTION);
+		msg->AddInt32("index", i);
+		BMenuItem* item = new BMenuItem(fCollections.ItemAt(i)->Name().String(), msg);
+		fCollectionMenu->AddItem(item);
+		if (i == fActiveCollectionIndex)
+			item->SetMarked(true);
+	}
+	fCollectionMenu->SetTargetForItems(this);
+
+	if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems()) {
+		fCollectionMenuField->MenuItem()->SetLabel(
+			fCollections.ItemAt(fActiveCollectionIndex)->Name().String());
+	} else {
+		fCollectionMenuField->MenuItem()->SetLabel("(no collections)");
+	}
+
+	fDeleteCollectionButton->SetEnabled(fActiveCollectionIndex >= 0);
+}
+
+
+void
+MainWindow::_RefreshCollectionItemList()
+{
+	fCollectionListView->MakeEmpty();
+
+	if (fActiveCollectionIndex < 0 || fActiveCollectionIndex >= fCollections.CountItems())
+		return;
+
+	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
+	for (int32 i = 0; i < collection->CountItems(); ++i)
+		fCollectionListView->AddItem(new BStringItem(collection->ItemAt(i)->Text()));
+}
+
+
+// Clipboard
+status_t
+MainWindow::_CopyTextToClipboard(const BString& text)
+{
+    if (!be_clipboard->Lock())
+        return B_ERROR;
+
+    be_clipboard->Clear();
+
+    BMessage* clip = be_clipboard->Data();
+    status_t status = B_ERROR;
+
+    if (clip != nullptr) {
+        status = clip->AddData("text/plain", B_MIME_TYPE,
+            text.String(), text.Length());
+
+        if (status == B_OK)
+            status = be_clipboard->Commit();
+    }
+
+    be_clipboard->Unlock();
+
+    return status;
+}
+
+
+// Settings
 status_t
 MainWindow::_LoadSettings(BMessage& settings)
 {
@@ -1655,520 +2304,9 @@ MainWindow::_RestoreValues(BMessage& settings)
 
 
 void
-MainWindow::_LoadRequestData(const RequestData& data)
-{
-	fUrlField->SetText(data.fUrl.String());
-	fBodyPanel->LoadFrom(data.fBodyMode, data.fBody, data.fParams, data.fFilePath);
-
-	for (int32 i = 0; i < fMethodMenu->CountItems(); ++i) {
-		BMenuItem* mi = fMethodMenu->ItemAt(i);
-		if (data.fMethod == mi->Label()) {
-			mi->SetMarked(true);
-			break;
-		}
-	}
-
-	BString username, password, token, headerName, headerValue;
-	data.fAuthValues.FindString("username", &username);
-	data.fAuthValues.FindString("password", &password);
-	data.fAuthValues.FindString("token", &token);
-	data.fAuthValues.FindString("headerName", &headerName);
-	data.fAuthValues.FindString("headerValue", &headerValue);
-
-	fAuthPanel->LoadFrom(data.fAuthType, data.fAuthValues);
-	fQueryParamsEditor->LoadFrom(data.fQueryParams);
-	fHeadersPanel->LoadFrom(data.fCustomHeaders);
-}
-
-
-void
-MainWindow::_UpdateHistoryButtons()
-{
-	bool hasItems = fHistoryPanel->CountItems() > 0;
-	fClearHistoryBtn->SetEnabled(hasItems);
-}
-
-
-void
-MainWindow::_UpdatePreview()
-{
-	BMenuItem* marked = fMethodMenu->FindMarked();
-	BString method(marked ? marked->Label() : "GET");
-	BString urlText = _BuildFullUrl();
-
-	BUrl url(urlText, false);
-
-	BString preview;
-	preview << method << " " << urlText << " HTTP/1.1\n";
-	if (url.IsValid())
-		preview << "Host: " << url.Host() << "\n";
-
-	fHeadersPanel->SetComputedHeaders(_ComputedHeaders());
-	BHttpFields previewFields;
-	fAuthPanel->ApplyTo(previewFields);
-	for (const BHttpFields::Field& field : previewFields) {
-		std::string_view name = field.Name();
-		std::string_view value = field.Value();
-		preview << BString(name.data(), name.size()) << ": " << BString(value.data(), value.size())
-				<< "\n";
-	}
-
-	// Custom headers
-	BMessage customHeaders = fHeadersPanel->CurrentHeaders();
-	BMessage h;
-	for (int32 i = 0; customHeaders.FindMessage("header", i, &h) == B_OK; i++) {
-		BString key, value;
-		h.FindString("key", &key);
-		h.FindString("value", &value);
-		preview << key << ": " << value << "\n";
-		h.MakeEmpty();
-	}
-
-	BString mode = fBodyPanel->CurrentMode();
-	bool bodyAllowed = (method != "GET" && method != "HEAD" && mode != "none");
-
-	if (bodyAllowed) {
-		if (mode == "file") {
-			BString path = fBodyPanel->CurrentFilePath();
-			if (path.Length() > 0) {
-				preview << "Content-Type: " << fBodyPanel->CurrentContentType() << "\n";
-				preview << "Content-Length: " << fBodyPanel->CurrentBodyLength() << "\n\n";
-				preview << "[File: " << path << ", "
-						<< _FormatFileSize(fBodyPanel->CurrentBodyLength()) << "]";
-			}
-		} else {
-			BString body = fBodyPanel->CurrentBody();
-			if (body.Length() > 0) {
-				preview << "Content-Type: " << fBodyPanel->CurrentContentType() << "\n";
-				preview << "Content-Length: " << body.Length() << "\n\n";
-				preview << body;
-			}
-		}
-	}
-
-	fPreviewPanel->SetText(preview.String());
-}
-
-
-status_t
-MainWindow::_CollectionsDirectory(BPath& path)
-{
-	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
-	if (status != B_OK)
-		return status;
-
-	status = path.Append(kSettingsDirName);
-	if (status != B_OK)
-		return status;
-
-	status = path.Append(kCollectionsDirName);
-	if (status != B_OK)
-		return status;
-
-	return create_directory(path.Path(), 0755);
-}
-
-
-status_t
-MainWindow::_SaveCollection(Collection* collection)
-{
-	BPath dirPath;
-	status_t status = _CollectionsDirectory(dirPath);
-	if (status != B_OK)
-		return status;
-
-	BPath filePath(dirPath);
-	status = filePath.Append(collection->FileName());
-	if (status != B_OK)
-		return status;
-
-	BFile file;
-	status = file.SetTo(filePath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
-	if (status != B_OK)
-		return status;
-
-	BMessage archive;
-	collection->Archive(archive);
-	return archive.Flatten(&file);
-}
-
-
-status_t
-MainWindow::_LoadCollection(const BString& fileName, Collection*& outCollection)
-{
-	BPath dirPath;
-	status_t status = _CollectionsDirectory(dirPath);
-	if (status != B_OK)
-		return status;
-
-	BPath filePath(dirPath);
-	status = filePath.Append(fileName);
-	if (status != B_OK)
-		return status;
-
-	BFile file;
-	status = file.SetTo(filePath.Path(), B_READ_ONLY);
-	if (status != B_OK)
-		return status;
-
-	BMessage archive;
-	status = archive.Unflatten(&file);
-	if (status != B_OK)
-		return status;
-
-	outCollection = new Collection(archive);
-	outCollection->SetFileName(fileName);
-	return B_OK;
-}
-
-
-status_t
-MainWindow::_SaveCollectionsIndex()
-{
-	BPath dirPath;
-	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &dirPath);
-	if (status != B_OK)
-		return status;
-	status = dirPath.Append(kSettingsDirName);
-	if (status != B_OK)
-		return status;
-
-	BPath indexPath(dirPath);
-	status = indexPath.Append(kCollectionsIndexFileName);
-	if (status != B_OK)
-		return status;
-
-	BFile file;
-	status = file.SetTo(indexPath.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
-	if (status != B_OK)
-		return status;
-
-	BMessage index;
-	for (int32 i = 0; i < fCollections.CountItems(); ++i)
-		index.AddString("fileName", fCollections.ItemAt(i)->FileName());
-
-	if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems())
-		index.AddString("activeFileName", fCollections.ItemAt(fActiveCollectionIndex)->FileName());
-
-	return index.Flatten(&file);
-}
-
-
-status_t
-MainWindow::_LoadCollectionsIndex()
-{
-	BPath dirPath;
-	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, &dirPath);
-	if (status != B_OK)
-		return status;
-	status = dirPath.Append(kSettingsDirName);
-	if (status != B_OK)
-		return status;
-
-	BPath indexPath(dirPath);
-	status = indexPath.Append(kCollectionsIndexFileName);
-	if (status != B_OK)
-		return status;
-
-	BFile file;
-	status = file.SetTo(indexPath.Path(), B_READ_ONLY);
-	if (status != B_OK)
-		return B_OK; // no index yet (first run)
-
-	BMessage index;
-	status = index.Unflatten(&file);
-	if (status != B_OK)
-		return status;
-
-	BString fileName;
-	for (int32 i = 0; index.FindString("fileName", i, &fileName) == B_OK; ++i) {
-		Collection* collection = nullptr;
-		if (_LoadCollection(fileName, collection) == B_OK)
-			fCollections.AddItem(collection);
-	}
-
-	fActiveCollectionIndex = -1; // default: none, if nothing matches
-
-	BString activeFileName;
-	if (index.FindString("activeFileName", &activeFileName) == B_OK) {
-		for (int32 i = 0; i < fCollections.CountItems(); ++i) {
-			if (fCollections.ItemAt(i)->FileName() == activeFileName) {
-				fActiveCollectionIndex = i;
-				break;
-			}
-		}
-	}
-
-	_RefreshCollectionMenu();
-
-	return B_OK;
-}
-
-
-void
-MainWindow::_RefreshCollectionMenu()
-{
-	for (int32 i = fCollectionMenu->CountItems() - 1; i >= 0; --i)
-		delete fCollectionMenu->RemoveItem(i);
-
-	for (int32 i = 0; i < fCollections.CountItems(); ++i) {
-		BMessage* msg = new BMessage(M_SELECT_COLLECTION);
-		msg->AddInt32("index", i);
-		BMenuItem* item = new BMenuItem(fCollections.ItemAt(i)->Name().String(), msg);
-		fCollectionMenu->AddItem(item);
-		if (i == fActiveCollectionIndex)
-			item->SetMarked(true);
-	}
-	fCollectionMenu->SetTargetForItems(this);
-
-	if (fActiveCollectionIndex >= 0 && fActiveCollectionIndex < fCollections.CountItems()) {
-		fCollectionMenuField->MenuItem()->SetLabel(
-			fCollections.ItemAt(fActiveCollectionIndex)->Name().String());
-	} else {
-		fCollectionMenuField->MenuItem()->SetLabel("(no collections)");
-	}
-
-	fDeleteCollectionButton->SetEnabled(fActiveCollectionIndex >= 0);
-}
-
-
-void
-MainWindow::_RefreshCollectionItemList()
-{
-	fCollectionListView->MakeEmpty();
-
-	if (fActiveCollectionIndex < 0 || fActiveCollectionIndex >= fCollections.CountItems())
-		return;
-
-	Collection* collection = fCollections.ItemAt(fActiveCollectionIndex);
-	for (int32 i = 0; i < collection->CountItems(); ++i)
-		fCollectionListView->AddItem(new BStringItem(collection->ItemAt(i)->Text()));
-}
-
-
-BString
-MainWindow::_BuildFullUrl() const
-{
-	BString url(fUrlField->Text());
-	BString params = fQueryParamsEditor->FormEncodedValues();
-
-	if (params.IsEmpty())
-		return url;
-
-	url << (url.FindFirst('?') >= 0 ? "&" : "?");
-	url << params;
-
-	return url;
-}
-
-
-BMessage
-MainWindow::_ComputedHeaders() const
-{
-	BMessage headers;
-
-	BString urlText = _BuildFullUrl();
-	BUrl url(urlText, false);
-	if (url.IsValid()) {
-		BMessage h;
-		h.AddString("key", "Host");
-		h.AddString("value", url.Host());
-		headers.AddMessage("header", &h);
-	}
-
-	BMenuItem* marked = fMethodMenu->FindMarked();
-	BString method(marked ? marked->Label() : "GET");
-	bool bodyAllowed = (method != "GET" && method != "HEAD" && fBodyPanel->CurrentMode() != "none");
-
-	if (bodyAllowed) {
-		BString body = fBodyPanel->CurrentBody();
-		if (body.Length() > 0) {
-			BMessage h;
-			h.AddString("key", "Content-Type");
-			h.AddString("value", fBodyPanel->CurrentContentType());
-			headers.AddMessage("header", &h);
-
-			BMessage h2;
-			h2.AddString("key", "Content-Length");
-			BString len;
-			len << body.Length();
-			h2.AddString("value", len);
-			headers.AddMessage("header", &h2);
-		}
-	}
-
-	BHttpFields authFields;
-	fAuthPanel->ApplyTo(authFields);
-	for (const BHttpFields::Field& field : authFields) {
-		std::string_view name = field.Name();
-		std::string_view value = field.Value();
-		BMessage h;
-		h.AddString("key", BString(name.data(), name.size()));
-		h.AddString("value", BString(value.data(), value.size()));
-		headers.AddMessage("header", &h);
-	}
-
-	return headers;
-}
-
-
-void
 MainWindow::_ApplySettings()
 {
 	fResponseBodyView->SetWordWrap(fAppSettings->fWordWrap);
 	fPreviewPanel->SetWordWrap(fAppSettings->fWordWrap);
 	_TrimHistory();
-}
-
-
-void
-MainWindow::_ApplyDefaultUserAgent()
-{
-	if (fAppSettings->fDefaultUserAgent.Length() > 0) {
-		fHeadersPanel->AddCustomHeaderIfMissing("User-Agent", fAppSettings->fDefaultUserAgent);
-		_UpdatePreview();
-	}
-}
-
-
-void
-MainWindow::_TrimHistory()
-{
-	while (fHistoryPanel->CountItems() > fAppSettings->fMaxHistoryItems) {
-		BListItem* item = fHistoryPanel->RemoveItem(fHistoryPanel->CountItems() - 1);
-		delete item;
-	}
-	_UpdateHistoryButtons();
-}
-
-
-void
-MainWindow::_CancelCurrentRequest()
-{
-	if (!fCurrentResult.has_value())
-		return;
-
-	fSession.Cancel(fCurrentResult.value());
-	fCurrentResult.reset();
-
-	_StopRequestTimeout();
-}
-
-
-void
-MainWindow::_StopRequestTimeout()
-{
-	delete fRequestTimeoutRunner;
-	fRequestTimeoutRunner = nullptr;
-}
-
-
-BString
-MainWindow::_FormatFileSize(int64 bytes)
-{
-	BString result;
-	if (bytes < 1024)
-		result << bytes << " B";
-	else if (bytes < 1024 * 1024)
-		result << (bytes / 1024.0f) << " KB";
-	else
-		result << (bytes / (1024.0f * 1024.0f)) << " MB";
-	return result;
-}
-
-
-bool
-MainWindow::_IsTextResponse() const
-{
-	BString mimeType(fContentType);
-
-	// Remove charset and other parameters
-	int32 separator = mimeType.FindFirst(';');
-	if (separator >= 0)
-		mimeType.Truncate(separator);
-
-	mimeType.Trim();
-	mimeType.ToLower();
-
-	if (mimeType.StartsWith("text/"))
-		return true;
-
-	if (mimeType == "application/json" || mimeType.EndsWith("+json"))
-		return true;
-
-	if (mimeType == "application/xml" || mimeType.EndsWith("+xml"))
-		return true;
-
-	if (mimeType == "application/javascript")
-		return true;
-
-	return false;
-}
-
-
-bool
-MainWindow::_IsJsonResponse() const
-{
-    BString mimeType(fContentType);
-
-    int32 separator = mimeType.FindFirst(';');
-    if (separator >= 0)
-        mimeType.Truncate(separator);
-
-    mimeType.Trim();
-    mimeType.ToLower();
-
-    return mimeType == "application/json"
-        || mimeType == "text/json"
-        || mimeType.EndsWith("+json");
-}
-
-
-void
-MainWindow::_DisplayResponseBody()
-{
-    BString displayText = fRawResponseBody;
-
-    if (fPrettifyCheck->Value() == B_CONTROL_ON) {
-        try {
-            nlohmann::json parsed = nlohmann::json::parse(fRawResponseBody.String());
-            displayText = parsed.dump(2).c_str();
-        } catch (const nlohmann::json::parse_error&) {
-        }
-    }
-
-    int32 length = displayText.Length();
-    if (fAppSettings->fMaxResponseSize > 0 && length > fAppSettings->fMaxResponseSize) {
-        BString truncated;
-        truncated.SetTo(displayText.String(), (int32)fAppSettings->fMaxResponseSize);
-        BString notice;
-        notice << "\n\n[Response truncated, showing "
-               << (fAppSettings->fMaxResponseSize / (1024 * 1024)) << " MB of "
-               << (length / (1024 * 1024)) << " MB. Adjust the limit in Settings.]";
-		BString response;
-		response << truncated << notice;
-        fResponseBodyView->SetText((notice).String());
-    } else {
-        fResponseBodyView->SetText(displayText.String());
-    }
-}
-
-
-void
-MainWindow::_UpdateResponseActions()
-{
-    bool hasBody = fHasCompletedResponse
-		&&fResponseBuffer.HasValue()
-        && fResponseBuffer->BufferLength() > 0;
-
-    bool isText = hasBody && _IsTextResponse();
-    bool isJson = hasBody && _IsJsonResponse();
-
-    // Response actions
-    fCopyResponseButton->SetEnabled(isText);
-    fSaveResponseButton->SetEnabled(hasBody);
-    fOpenResponseButton->SetEnabled(hasBody);
-
-    // Formatting options
-    fPrettifyCheck->SetEnabled(isJson);
 }
