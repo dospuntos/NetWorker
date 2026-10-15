@@ -23,15 +23,17 @@
 #include <CheckBox.h>
 #include <Clipboard.h>
 #include <Directory.h>
-#include <GroupView.h>
 #include <ErrorsExt.h>
 #include <ExclusiveBorrow.h>
 #include <File.h>
 #include <FindDirectory.h>
+#include <Font.h>
+#include <GroupView.h>
 #include <HttpFields.h>
 #include <HttpRequest.h>
 #include <HttpResult.h>
 #include <HttpSession.h>
+#include <InterfaceDefs.h>
 #include <LayoutBuilder.h>
 #include <MenuField.h>
 #include <MenuItem.h>
@@ -842,8 +844,9 @@ MainWindow::_BuildPreviewPanel()
 BView*
 MainWindow::_BuildResponsePanel()
 {
-    fResponseStatusLabel = new BStringView("status", "(no response yet)");
-    BButton* clearButton = new BButton("clear", "Clear", new BMessage(M_CLEAR_RESPONSE));
+	fResponseStatusLabel = new BStringView("status", "");
+	_SetResponseStatus("(no response yet)");
+	BButton* clearButton = new BButton("clear", "Clear", new BMessage(M_CLEAR_RESPONSE));
 
     fResponseHeadersList = new BColumnListView("responseHeaders",
         B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE, B_FANCY_BORDER);
@@ -992,10 +995,48 @@ MainWindow::_SetStatus(BString text)
     fStatusLabel->SetText(text);
 }
 
+
 void
-MainWindow::_SetResponseStatus(BString text)
+MainWindow::_SetResponseStatus(const char* text, StatusType type)
 {
+	rgb_color color;
+
+	switch (type) {
+		case StatusType::Success:
+			color = {0, 140, 0, 255}; // Green
+			break;
+
+		case StatusType::Warning:
+			color = {190, 120, 0, 255}; // Orange
+			break;
+
+		case StatusType::Error:
+			color = {200, 40, 40, 255}; // Red
+			break;
+
+		case StatusType::Notice:
+			color = {40, 110, 190, 255}; // Blue
+			break;
+
+		default:
+			color = ui_color(B_PANEL_TEXT_COLOR);
+			break;
+	}
+
+	// Set text color
+	fResponseStatusLabel->SetHighColor(color);
+
+	// Set font style
+	BFont font;
+	fResponseStatusLabel->GetFont(&font);
+
+	font.SetFace(B_BOLD_FACE);
+
+	fResponseStatusLabel->SetFont(&font);
+
+	// Update text
 	fResponseStatusLabel->SetText(text);
+	fResponseStatusLabel->Invalidate();
 }
 
 
@@ -1121,7 +1162,19 @@ MainWindow::_HandleRequestCompleted(BMessage* message)
 	auto& status = fCurrentResult->Status();
 	BString statusText;
 	statusText << status.code << " " << status.text;
-	_SetResponseStatus(statusText);
+	StatusType type = StatusType::None;
+
+	if (status.code >= 200 && status.code < 300)
+		type = StatusType::Success;
+	else if (status.code >= 300 && status.code < 400)
+		type = StatusType::Notice;
+	else if (status.code >= 400 && status.code < 500)
+		type = StatusType::Warning;
+	else if (status.code >= 500)
+		type = StatusType::Error;
+
+	_SetResponseStatus(statusText.String(), type);
+
 	_SetStatus("Request completed");
 
 	fResponseHeadersList->Clear();
@@ -1345,7 +1398,7 @@ MainWindow::_ClearResponse()
     if (fResponseBuffer.HasValue() && !fCurrentResult.has_value())
         fResponseBuffer->SetSize(0);
 
-    fResponseStatusLabel->SetText("(no response yet)");
+	_SetResponseStatus("(no response yet)");
 	_SetStatus("Response cleared");
     fResponseHeadersList->Clear();
     fResponseBodyView->SetText("");

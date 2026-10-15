@@ -47,6 +47,8 @@ class BStringView;
 class BSplitView;
 class BMessageRunner;
 
+// Status colors for response messages
+enum class StatusType { None, Success, Warning, Error, Notice };
 
 class MainWindow : public BWindow {
 public:
@@ -66,7 +68,7 @@ private:
 	BView*				_BuildCollectionPanel();
 	BView*              _BuildStatusBar();
     void                _SetStatus(BString text);
-	void				_SetResponseStatus(BString text);
+	void				_SetResponseStatus(const char* text, StatusType type = StatusType::None);
 
 	// Request handling
 	void				_SendRequest();
@@ -211,7 +213,6 @@ private:
 	BTabView*			fSidebarTabs;
 	BStringView*        fStatusLabel;
     BStringView*        fStatusDetailsLabel;
-
 };
 
 #endif
