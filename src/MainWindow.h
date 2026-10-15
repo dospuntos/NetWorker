@@ -64,6 +64,9 @@ private:
 	BView*				_BuildResponsePanel();
 	BView*				_BuildHistoryPanel();
 	BView*				_BuildCollectionPanel();
+	BView*              _BuildStatusBar();
+    void                _SetStatus(BString text);
+	void				_SetResponseStatus(BString text);
 
 	// Request handling
 	void				_SendRequest();
@@ -147,7 +150,7 @@ private:
 	BTextControl*		fUrlField;
 	BButton*			fSendButton;
 	BButton*			fSaveButton;
-	BStringView*		fStatusLabel;
+	BStringView*		fResponseStatusLabel;
 
 	// Request panels
 	BodyPanel*			fBodyPanel;
@@ -206,6 +209,8 @@ private:
 	BSplitView*			fRequestAreaSplit;
 	BSplitView*			fOuterSplit;
 	BTabView*			fSidebarTabs;
+	BStringView*        fStatusLabel;
+    BStringView*        fStatusDetailsLabel;
 
 };
 

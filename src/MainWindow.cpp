@@ -23,6 +23,7 @@
 #include <CheckBox.h>
 #include <Clipboard.h>
 #include <Directory.h>
+#include <GroupView.h>
 #include <ErrorsExt.h>
 #include <ExclusiveBorrow.h>
 #include <File.h>
@@ -40,6 +41,7 @@
 #include <PopUpMenu.h>
 #include <Roster.h>
 #include <ScrollView.h>
+#include <SeparatorView.h>
 #include <SplitView.h>
 #include <StringView.h>
 #include <SupportDefs.h>
@@ -238,7 +240,7 @@ MainWindow::MessageReceived(BMessage* message)
 				fSendButton->SetLabel("Send");
 				if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
 					item->SetLabel("Send request");
-				fStatusLabel->SetText("Cancelled");
+				_SetStatus("Request cancelled");
 				break;
 			}
 			_SendRequest();
@@ -251,7 +253,7 @@ MainWindow::MessageReceived(BMessage* message)
 
 			_CancelCurrentRequest();
 
-			fStatusLabel->SetText("Request timed out");
+			_SetStatus("Request timed out");
 			fSendButton->SetLabel("Send");
 			if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
 				item->SetLabel("Send request");
@@ -278,7 +280,8 @@ MainWindow::MessageReceived(BMessage* message)
 			int statusCode = message->GetInt16(HttpStatusCode, 0);
 			BString label;
 			label << statusCode;
-			fStatusLabel->SetText(label.String());
+			fResponseStatusLabel->SetText(label.String());
+			_SetStatus("Receiving response" B_UTF8_ELLIPSIS);
 			break;
 		}
 
@@ -490,9 +493,9 @@ MainWindow::MessageReceived(BMessage* message)
 			if (file.InitCheck() == B_OK) {
 				BString text(fResponseBodyView->Text());
 				file.Write(text.String(), text.Length());
-				fStatusLabel->SetText("Response saved");
+				_SetStatus("Response saved");
 			} else {
-				fStatusLabel->SetText("Failed to save response");
+				_SetStatus("Failed to save response");
 			}
 			break;
 		}
@@ -732,7 +735,7 @@ MainWindow::_BuildLayout()
 	fOuterSplit->AddChild(fSplitView, 0.8f);
 	fOuterSplit->AddChild(fSidebarTabs, 0.2f);
 
-	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(fOuterSplit).End();
+	BLayoutBuilder::Group<>(this, B_VERTICAL, 0).Add(fMenuBar).Add(fOuterSplit).Add(_BuildStatusBar(), 0.0f).End();
 	_UpdateHistoryButtons();
 	_UpdatePreview();
 	_RefreshCollectionMenu();
@@ -839,7 +842,7 @@ MainWindow::_BuildPreviewPanel()
 BView*
 MainWindow::_BuildResponsePanel()
 {
-    fStatusLabel = new BStringView("status", "(no response yet)");
+    fResponseStatusLabel = new BStringView("status", "(no response yet)");
     BButton* clearButton = new BButton("clear", "Clear", new BMessage(M_CLEAR_RESPONSE));
 
     fResponseHeadersList = new BColumnListView("responseHeaders",
@@ -891,7 +894,7 @@ MainWindow::_BuildResponsePanel()
     return BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
         .SetInsets(B_USE_WINDOW_INSETS)
         .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
-            .Add(fStatusLabel)
+            .Add(fResponseStatusLabel)
             .AddGlue()
             .Add(clearButton)
             .End()
@@ -958,6 +961,44 @@ MainWindow::_BuildCollectionPanel()
 }
 
 
+BView*
+MainWindow::_BuildStatusBar()
+{
+    fStatusLabel = new BStringView("statusLabel", "Ready");
+	fStatusLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+
+	fStatusDetailsLabel = new BStringView("statusDetailsLabel", "");
+	fStatusDetailsLabel->SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+
+    BView* statusBar = new BGroupView(
+        "statusBar", B_VERTICAL, 0);
+
+    BLayoutBuilder::Group<>(statusBar, B_VERTICAL, 0)
+        .Add(new BSeparatorView(B_HORIZONTAL))
+        .AddGroup(B_HORIZONTAL, B_USE_DEFAULT_SPACING)
+            .SetInsets(B_USE_DEFAULT_SPACING, 2,
+                B_USE_DEFAULT_SPACING, 2)
+            .Add(fStatusLabel, 1.0f)
+            .Add(fStatusDetailsLabel, 0.0f)
+        .End();
+
+    return statusBar;
+}
+
+
+void
+MainWindow::_SetStatus(BString text)
+{
+    fStatusLabel->SetText(text);
+}
+
+void
+MainWindow::_SetResponseStatus(BString text)
+{
+	fResponseStatusLabel->SetText(text);
+}
+
+
 // Request handling
 void
 MainWindow::_SendRequest()
@@ -969,7 +1010,7 @@ MainWindow::_SendRequest()
 
 	BUrl url(_BuildFullUrl(), false);
 	if (!url.IsValid()) {
-		fStatusLabel->SetText("Invalid URL");
+		_SetStatus("Invalid URL");
 		return;
 	}
 
@@ -1039,7 +1080,8 @@ MainWindow::_SendRequest()
 	fCopyResponseButton->SetEnabled(false);
 	if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
 				item->SetLabel("Cancel request");
-	fStatusLabel->SetText("Sending" B_UTF8_ELLIPSIS);
+	_SetStatus("Sending" B_UTF8_ELLIPSIS);
+	_SetResponseStatus("(no response yet)");
 	fResponseHeadersList->Clear();
 	fResponseBodyView->SetText("");
 
@@ -1057,17 +1099,18 @@ MainWindow::_HandleRequestCompleted(BMessage* message)
 {
 	using namespace BPrivate::Network::UrlEventData;
 
-	_StopRequestTimeout();
-	fHasCompletedResponse = true;
-
 	int id = message->GetInt32(Id, -1);
 	bool ok = message->GetBool(Success, false);
 
 	if (!fCurrentResult.has_value() || id != fCurrentResult->Identity())
 		return;
 
+	_StopRequestTimeout();
+	fHasCompletedResponse = true;
+
 	if (!ok) {
-		fStatusLabel->SetText("Request failed");
+		_SetStatus("Request failed");
+		_SetResponseStatus("(no response)");
 		fSendButton->SetLabel("Send");
 		if (BMenuItem* item = fMenuBar->FindItem(M_SEND_REQUEST))
 			item->SetLabel("Send request");
@@ -1078,7 +1121,8 @@ MainWindow::_HandleRequestCompleted(BMessage* message)
 	auto& status = fCurrentResult->Status();
 	BString statusText;
 	statusText << status.code << " " << status.text;
-	fStatusLabel->SetText(statusText.String());
+	_SetResponseStatus(statusText);
+	_SetStatus("Request completed");
 
 	fResponseHeadersList->Clear();
 
@@ -1301,7 +1345,8 @@ MainWindow::_ClearResponse()
     if (fResponseBuffer.HasValue() && !fCurrentResult.has_value())
         fResponseBuffer->SetSize(0);
 
-    fStatusLabel->SetText("(no response yet)");
+    fResponseStatusLabel->SetText("(no response yet)");
+	_SetStatus("Response cleared");
     fResponseHeadersList->Clear();
     fResponseBodyView->SetText("");
 
@@ -1881,7 +1926,7 @@ MainWindow::_ExportCollection(BMessage* message)
 
 	status_t status
 		= CollectionExporter::Export(fPendingExportCollection, BString(filePath.Path()));
-	fStatusLabel->SetText(status == B_OK ? "Collection exported" : "Export failed");
+	_SetStatus(status == B_OK ? "Collection exported" : "Export failed");
 
 	fPendingExportCollection = nullptr;
 }
@@ -1935,7 +1980,7 @@ MainWindow::_ImportCollection(BMessage* message)
     _RefreshCollectionMenu();
     _RefreshCollectionItemList();
 
-    fStatusLabel->SetText("Collection imported");
+    _SetStatus("Collection imported");
 }
 
 
