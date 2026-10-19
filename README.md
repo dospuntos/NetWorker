@@ -8,6 +8,7 @@ Built using the `netservices2` library.
 
 Compose a request with method, URL, headers, form parameters, or a raw body, authenticate with Basic, Bearer, or API key auth. Each request is saved in a history list, and can be restored.
 
+View the response, prettify JSON responses, and copy, save or open the response in your default browser, text editor or in any other application of your choice.
 ---
 
 ## Features
@@ -31,6 +32,8 @@ Compose a request with method, URL, headers, form parameters, or a raw body, aut
   - Status line
   - Response headers in a sortable column list
   - Response body view
+  - Prettify JSON response
+  - Copy, save or open the response in the default browser, text-editor or in any application
 
 - **History**
   - Auto-populated on every send (method, URL, body, params, and auth recorded)
